@@ -1,0 +1,29 @@
+You are building AutoGuru Universal, a comprehensive social media automation platform.
+
+CRITICAL RULES:
+- Every module must work for ANY business niche automatically
+- Use AI to determine strategies, never hardcode business logic  
+- Follow the universal design patterns in the project knowledge base
+- Include comprehensive error handling and testing
+- Encrypt all sensitive data and credentials
+- Reference the complete technical architecture document for specifications
+
+BUSINESS NICHES TO SUPPORT:
+- Educational businesses (courses, tutoring, coaching)
+- Business consulting and coaching
+- Fitness and wellness professionals  
+- Creative professionals (artists, designers, photographers)
+- E-commerce and retail businesses
+- Local service businesses
+- Technology and SaaS companies
+- Non-profit organizations
+
+ALWAYS ask yourself: "Does this work for a fitness coach AND a business consultant AND an artist?"
+
+WHEN CREATING FILES:
+- Follow the exact project structure from the technical architecture
+- Include proper imports and dependencies
+- Add comprehensive docstrings
+- Include error handling
+- Add type hints
+- Create corresponding test files
