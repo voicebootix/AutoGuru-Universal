@@ -95,19 +95,38 @@ class UniversalContentAnalyzer:
             openai_api_key: OpenAI API key for GPT models
             anthropic_api_key: Anthropic API key for Claude models
             default_llm: Default LLM provider to use ("openai" or "anthropic")
+        
+        Raises:
+            ValueError: If no API keys provided or invalid default_llm
         """
         self.openai_client = None
         self.anthropic_client = None
+        
+        # Validate default_llm
+        if default_llm not in ["openai", "anthropic"]:
+            raise ValueError(f"Invalid default_llm: {default_llm}. Must be 'openai' or 'anthropic'")
+        
         self.default_llm = default_llm
         
-        if openai_api_key:
-            self.openai_client = openai.AsyncOpenAI(api_key=openai_api_key)
+        # Initialize clients with validation
+        try:
+            if openai_api_key:
+                self.openai_client = openai.AsyncOpenAI(api_key=openai_api_key)
+                logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+            self.openai_client = None
             
-        if anthropic_api_key:
-            self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_api_key)
+        try:
+            if anthropic_api_key:
+                self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_api_key)
+                logger.info("Anthropic client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Anthropic client: {str(e)}")
+            self.anthropic_client = None
             
         if not self.openai_client and not self.anthropic_client:
-            raise ValueError("At least one LLM API key must be provided")
+            raise ValueError("At least one LLM API key must be provided and valid")
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def analyze_content(
@@ -126,7 +145,19 @@ class UniversalContentAnalyzer:
             
         Returns:
             ContentAnalysisResult with comprehensive analysis
+            
+        Raises:
+            ValueError: If content is empty or too short
+            Exception: If analysis fails after retries
         """
+        # Validate input
+        if not content or len(content.strip()) < 10:
+            raise ValueError("Content must be at least 10 characters long")
+        
+        if len(content) > 50000:
+            logger.warning(f"Content length ({len(content)}) exceeds recommended maximum. Truncating.")
+            content = content[:50000]
+        
         try:
             # Run all analyses in parallel for better performance
             tasks = [
@@ -139,16 +170,32 @@ class UniversalContentAnalyzer:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Handle any exceptions from parallel tasks
+            errors = []
+            clean_results = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    logger.error(f"Task {i} failed: {str(result)}")
-                    raise result
+                    task_names = ["business niche detection", "audience analysis", "brand voice extraction", "theme extraction"]
+                    error_msg = f"{task_names[i]} failed: {str(result)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                else:
+                    clean_results.append(result)
             
-            # Safe unpacking after exception check
-            niche_result = results[0]
-            audience_result = results[1]
-            voice_result = results[2]
-            themes = results[3]
+            if errors:
+                raise Exception(f"Multiple analysis tasks failed: {'; '.join(errors)}")
+            
+            # All tasks succeeded, unpack results
+            if len(clean_results) != 4:
+                raise Exception(f"Expected 4 results, got {len(clean_results)}")
+            
+            niche_result = clean_results[0]
+            audience_result = clean_results[1]
+            voice_result = clean_results[2]
+            themes = clean_results[3]
+            
+            # Validate critical results
+            if not niche_result or not isinstance(niche_result, tuple) or len(niche_result) != 2:
+                raise ValueError("Invalid business niche detection result")
             
             # Assess viral potential for specified platforms
             if not platforms:
@@ -174,12 +221,13 @@ class UniversalContentAnalyzer:
                 metadata={
                     "content_length": len(content),
                     "analysis_timestamp": asyncio.get_event_loop().time(),
-                    "llm_provider": self.default_llm
+                    "llm_provider": self.default_llm,
+                    "context_provided": bool(context)
                 }
             )
             
         except Exception as e:
-            logger.error(f"Content analysis failed: {str(e)}")
+            logger.error(f"Content analysis failed: {str(e)}", exc_info=True)
             raise
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
@@ -197,6 +245,10 @@ class UniversalContentAnalyzer:
             
         Returns:
             Tuple of (BusinessNiche, confidence_score)
+            
+        Raises:
+            ValueError: If response format is invalid
+            Exception: If detection fails
         """
         prompt = f"""
         Analyze the following content and determine the business niche it belongs to.
@@ -226,7 +278,19 @@ class UniversalContentAnalyzer:
         
         try:
             response = await self._call_llm(prompt, temperature=0.3)
-            result = json.loads(response)
+            
+            # Parse and validate response
+            try:
+                result = json.loads(response)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response: {response[:200]}...")
+                raise ValueError(f"Invalid JSON response from LLM: {str(e)}")
+            
+            # Validate required fields
+            required_fields = ["niche", "confidence"]
+            missing_fields = [field for field in required_fields if field not in result]
+            if missing_fields:
+                raise ValueError(f"Missing required fields in response: {missing_fields}")
             
             niche_map = {
                 "education": BusinessNiche.EDUCATION,
@@ -240,14 +304,28 @@ class UniversalContentAnalyzer:
                 "other": BusinessNiche.OTHER
             }
             
-            niche = niche_map.get(result["niche"], BusinessNiche.OTHER)
-            confidence = float(result["confidence"])
+            niche_str = result.get("niche", "").lower()
+            if niche_str not in niche_map:
+                logger.warning(f"Unknown niche '{niche_str}', defaulting to OTHER")
+                niche = BusinessNiche.OTHER
+            else:
+                niche = niche_map[niche_str]
+            
+            # Validate confidence score
+            try:
+                confidence = float(result["confidence"])
+                if not 0.0 <= confidence <= 1.0:
+                    logger.warning(f"Confidence score {confidence} out of range, clamping to [0,1]")
+                    confidence = max(0.0, min(1.0, confidence))
+            except (ValueError, TypeError) as e:
+                logger.error(f"Invalid confidence score: {result.get('confidence')}")
+                confidence = 0.5  # Default confidence
             
             logger.info(f"Detected niche: {niche.value} with confidence: {confidence}")
             return niche, confidence
             
         except Exception as e:
-            logger.error(f"Niche detection failed: {str(e)}")
+            logger.error(f"Niche detection failed: {str(e)}", exc_info=True)
             raise
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
@@ -492,42 +570,76 @@ class UniversalContentAnalyzer:
             
         Returns:
             LLM response as string
+            
+        Raises:
+            ValueError: If no LLM client is available
+            Exception: If LLM call fails
         """
-        try:
-            if self.default_llm == "openai" and self.openai_client:
-                response = await self.openai_client.chat.completions.create(
-                    model="gpt-4-turbo-preview",
-                    messages=[
-                        {"role": "system", "content": "You are an expert content analyst for social media. Always respond with valid JSON."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=temperature,
-                    response_format={"type": "json_object"}
-                )
-                return response.choices[0].message.content
-                
-            elif self.default_llm == "anthropic" and self.anthropic_client:
-                response = await self.anthropic_client.messages.create(
-                    model="claude-3-opus-20240229",
-                    messages=[
-                        {"role": "user", "content": f"You are an expert content analyst. Always respond with valid JSON.\n\n{prompt}"}
-                    ],
-                    temperature=temperature,
-                    max_tokens=2000
-                )
-                return response.content[0].text
-                
-            else:
-                # Fallback to whichever client is available
-                if self.openai_client:
-                    self.default_llm = "openai"
-                    return await self._call_llm(prompt, temperature)
-                elif self.anthropic_client:
-                    self.default_llm = "anthropic"
-                    return await self._call_llm(prompt, temperature)
-                else:
-                    raise ValueError("No LLM client available")
+        # Validate temperature
+        temperature = max(0.0, min(2.0, temperature))
+        
+        max_retries = 2
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                if self.default_llm == "openai" and self.openai_client:
+                    response = await self.openai_client.chat.completions.create(
+                        model="gpt-4-turbo-preview",
+                        messages=[
+                            {"role": "system", "content": "You are an expert content analyst for social media. Always respond with valid JSON."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=temperature,
+                        response_format={"type": "json_object"},
+                        max_tokens=2000
+                    )
                     
-        except Exception as e:
-            logger.error(f"LLM call failed: {str(e)}")
-            raise
+                    if not response.choices or not response.choices[0].message.content:
+                        raise ValueError("Empty response from OpenAI")
+                    
+                    return response.choices[0].message.content
+                    
+                elif self.default_llm == "anthropic" and self.anthropic_client:
+                    response = await self.anthropic_client.messages.create(
+                        model="claude-3-opus-20240229",
+                        messages=[
+                            {"role": "user", "content": f"You are an expert content analyst. Always respond with valid JSON.\n\n{prompt}"}
+                        ],
+                        temperature=temperature,
+                        max_tokens=2000
+                    )
+                    
+                    if not response.content or not response.content[0].text:
+                        raise ValueError("Empty response from Anthropic")
+                    
+                    return response.content[0].text
+                    
+                else:
+                    # Fallback to whichever client is available
+                    if self.openai_client:
+                        self.default_llm = "openai"
+                        return await self._call_llm(prompt, temperature)
+                    elif self.anthropic_client:
+                        self.default_llm = "anthropic"
+                        return await self._call_llm(prompt, temperature)
+                    else:
+                        raise ValueError("No LLM client available")
+                        
+            except Exception as e:
+                last_error = e
+                logger.warning(f"LLM call attempt {attempt + 1} failed: {str(e)}")
+                
+                # Try the other provider if available
+                if attempt < max_retries - 1:
+                    if self.default_llm == "openai" and self.anthropic_client:
+                        logger.info("Switching to Anthropic as fallback")
+                        self.default_llm = "anthropic"
+                    elif self.default_llm == "anthropic" and self.openai_client:
+                        logger.info("Switching to OpenAI as fallback")
+                        self.default_llm = "openai"
+                
+                await asyncio.sleep(1)  # Brief delay before retry
+        
+        logger.error(f"All LLM call attempts failed. Last error: {str(last_error)}")
+        raise last_error or Exception("LLM call failed")
