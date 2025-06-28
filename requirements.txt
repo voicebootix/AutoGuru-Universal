@@ -47,6 +47,7 @@ python-json-logger>=2.0.0
 
 # Task Queue
 celery>=5.3.0
+kombu>=5.3.0  # Celery messaging library
 redis>=5.0.0  # Celery backend
 
 # Social Media Platform SDKs

@@ -15,9 +15,15 @@ from enum import Enum
 import openai
 import anthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
+from json.decoder import JSONDecodeError
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Constants for content limits
+MAX_CONTENT_LENGTH = 10000
+MAX_CONTEXT_LENGTH = 2000
+MAX_LLM_CONTENT_LENGTH = 2000
 
 
 class BusinessNiche(Enum):
@@ -108,6 +114,30 @@ class UniversalContentAnalyzer:
             
         if not self.openai_client and not self.anthropic_client:
             raise ValueError("At least one LLM API key must be provided")
+        
+        self._max_retries = 3
+        self._timeout = 30
+    
+    def _validate_content(self, content: str) -> None:
+        """Validate content before processing"""
+        if not content:
+            raise ValueError("Content cannot be empty")
+        if len(content) > MAX_CONTENT_LENGTH:
+            raise ValueError(f"Content exceeds maximum length of {MAX_CONTENT_LENGTH} characters")
+        if not isinstance(content, str):
+            raise TypeError("Content must be a string")
+    
+    def _validate_json_response(self, response: str, expected_keys: List[str]) -> Dict[str, Any]:
+        """Validate JSON response from LLM"""
+        try:
+            data = json.loads(response)
+            for key in expected_keys:
+                if key not in data:
+                    raise ValueError(f"Missing required key in response: {key}")
+            return data
+        except JSONDecodeError as e:
+            logger.error(f"Invalid JSON response: {response[:200]}...")
+            raise ValueError(f"Failed to parse JSON response: {str(e)}")
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def analyze_content(
@@ -127,6 +157,9 @@ class UniversalContentAnalyzer:
         Returns:
             ContentAnalysisResult with comprehensive analysis
         """
+        # Validate input
+        self._validate_content(content)
+        
         try:
             # Run all analyses in parallel for better performance
             tasks = [
@@ -226,7 +259,7 @@ class UniversalContentAnalyzer:
         
         try:
             response = await self._call_llm(prompt, temperature=0.3)
-            result = json.loads(response)
+            result = self._validate_json_response(response, ["niche", "confidence"])
             
             niche_map = {
                 "education": BusinessNiche.EDUCATION,
@@ -241,13 +274,16 @@ class UniversalContentAnalyzer:
             }
             
             niche = niche_map.get(result["niche"], BusinessNiche.OTHER)
-            confidence = float(result["confidence"])
+            confidence = max(0.0, min(1.0, float(result["confidence"])))  # Ensure confidence is in range
             
             logger.info(f"Detected niche: {niche.value} with confidence: {confidence}")
             return niche, confidence
             
+        except ValueError as e:
+            logger.error(f"Niche detection failed - Invalid response: {str(e)}")
+            raise
         except Exception as e:
-            logger.error(f"Niche detection failed: {str(e)}")
+            logger.error(f"Niche detection failed - Unexpected error: {str(e)}")
             raise
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
