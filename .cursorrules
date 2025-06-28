@@ -7,6 +7,8 @@ CRITICAL RULES:
 - Include comprehensive error handling and testing
 - Encrypt all sensitive data and credentials
 - Reference the complete technical architecture document for specifications
+- Do not simply th full functionality or the features of the platform
+- No mock data, no place holders
 
 BUSINESS NICHES TO SUPPORT:
 - Educational businesses (courses, tutoring, coaching)
