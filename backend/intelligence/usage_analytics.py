@@ -16,8 +16,8 @@ from .base_intelligence import (
     IntelligenceInsight,
     IntelligenceEngineError
 )
-from ..models.content_models import Content, ContentEngagement
 from ..database.connection import get_db_connection
+from ..models.content_models import ContentAnalysis, PlatformContent, ContentMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +63,12 @@ class UsageTracker:
         """Get comprehensive platform usage statistics"""
         try:
             # Query content data for the platform
-            content_query = select(Content).where(
+            content_query = select(ContentAnalysis).where(
                 and_(
-                    Content.client_id == self.client_id,
-                    Content.platform == platform,
-                    Content.created_at >= start_date,
-                    Content.created_at <= end_date
+                    ContentAnalysis.client_id == self.client_id,
+                    ContentAnalysis.platform == platform,
+                    ContentAnalysis.created_at >= start_date,
+                    ContentAnalysis.created_at <= end_date
                 )
             )
             
@@ -80,12 +80,12 @@ class UsageTracker:
             failed_posts = sum(1 for c in contents if c.get('status') == 'failed')
             
             # Get engagement data
-            engagement_query = select(ContentEngagement).where(
+            engagement_query = select(PlatformContent).where(
                 and_(
-                    ContentEngagement.client_id == self.client_id,
-                    ContentEngagement.platform == platform,
-                    ContentEngagement.recorded_at >= start_date,
-                    ContentEngagement.recorded_at <= end_date
+                    PlatformContent.client_id == self.client_id,
+                    PlatformContent.platform == platform,
+                    PlatformContent.recorded_at >= start_date,
+                    PlatformContent.recorded_at <= end_date
                 )
             )
             
