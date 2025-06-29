@@ -1,0 +1,68 @@
+# Platform APIs
+google-api-python-client==2.108.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+facebook-sdk==3.1.0
+tweepy==4.14.0
+python-linkedin-v2==0.9.4
+TikTokApi==5.2.4
+
+# Media Processing
+opencv-python==4.8.1.78
+Pillow==10.0.1
+moviepy==1.0.3
+ffmpeg-python==0.2.0
+imageio==2.31.5
+
+# AI Services
+openai==1.3.5
+anthropic==0.7.4
+transformers==4.35.2
+langchain==0.0.340
+
+# Analytics & Data Processing
+pandas==2.1.3
+numpy==1.24.3
+scikit-learn==1.3.2
+matplotlib==3.8.1
+seaborn==0.13.0
+
+# Async Support
+aiohttp==3.9.0
+asyncio==3.4.3
+aiofiles==23.2.1
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+
+# API Development
+fastapi==0.104.1
+pydantic==2.5.0
+uvicorn==0.24.0
+
+# Security
+cryptography==41.0.7
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Utilities
+python-dotenv==1.0.0
+tenacity==8.2.3
+schedule==1.2.0
+pytz==2023.3
+python-dateutil==2.8.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+httpx==0.25.2
+
+# Development
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.5.0
