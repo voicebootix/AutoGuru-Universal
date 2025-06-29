@@ -13,11 +13,16 @@ from .base_creator import (
     UniversalContentCreator
 )
 
+from .brand_asset_manager import BrandAssetManager
+from .creative_analyzer import CreativePerformanceAnalyzer
+
 __all__ = [
     'ContentType',
     'CreativeStyle',
     'QualityLevel',
     'CreativeRequest',
     'CreativeAsset',
-    'UniversalContentCreator'
+    'UniversalContentCreator',
+    'BrandAssetManager',
+    'CreativePerformanceAnalyzer'
 ]
