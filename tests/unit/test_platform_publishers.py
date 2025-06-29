@@ -21,8 +21,8 @@ from backend.platforms.enhanced_base_publisher import (
 from backend.platforms.youtube_publisher import YouTubeEnhancedPublisher
 from backend.platforms.linkedin_publisher import LinkedInEnhancedPublisher
 from backend.platforms.tiktok_publisher import TikTokEnhancedPublisher
-# from backend.platforms.twitter_publisher import TwitterEnhancedPublisher
-# from backend.platforms.facebook_publisher import FacebookEnhancedPublisher
+from backend.platforms.twitter_publisher import TwitterEnhancedPublisher
+from backend.platforms.facebook_publisher import FacebookEnhancedPublisher
 from backend.models.content_models import BusinessNicheType
 
 
@@ -314,6 +314,106 @@ class TestUniversalPlatformPublishers:
         assert revenue > 0
         assert isinstance(revenue, float)
     
+    # Twitter Publisher Tests
+    @pytest.mark.asyncio
+    async def test_twitter_publisher_initialization(self):
+        """Test Twitter publisher initialization"""
+        publisher = TwitterEnhancedPublisher(client_id="test_client")
+        
+        assert publisher.client_id == "test_client"
+        assert publisher.platform_name == "twitter"
+        assert publisher.twitter_api is None
+        assert not publisher._authenticated
+    
+    @pytest.mark.asyncio
+    async def test_twitter_thread_optimization(self, sample_content_education):
+        """Test Twitter thread optimization"""
+        publisher = TwitterEnhancedPublisher(client_id="test_client")
+        
+        # Mock business niche detection
+        publisher.detect_business_niche = AsyncMock(return_value='education')
+        
+        viral_opts = await publisher.engagement_optimizer.optimize_for_virality(
+            sample_content_education,
+            'education'
+        )
+        
+        assert 'thread_structure' in viral_opts
+        assert 'engagement_hook' in viral_opts
+        assert 'hashtags' in viral_opts
+        assert 'viral_cta' in viral_opts
+        assert len(viral_opts['thread_structure']) >= 5  # Education threads are 5-15 tweets
+    
+    @pytest.mark.asyncio
+    async def test_twitter_revenue_calculation(self, sample_content_business):
+        """Test Twitter revenue calculation"""
+        publisher = TwitterEnhancedPublisher(client_id="test_client")
+        publisher.account_data = {
+            'followers_count': 50000,
+            'twitter_blue': True,
+            'verified': True
+        }
+        
+        revenue = await publisher.calculate_revenue_potential(
+            sample_content_business,
+            {'optimal_posting_time': datetime.utcnow()}
+        )
+        
+        assert revenue > 0
+        assert isinstance(revenue, float)
+    
+    # Facebook Publisher Tests
+    @pytest.mark.asyncio
+    async def test_facebook_publisher_initialization(self):
+        """Test Facebook publisher initialization"""
+        publisher = FacebookEnhancedPublisher(client_id="test_client")
+        
+        assert publisher.client_id == "test_client"
+        assert publisher.platform_name == "facebook"
+        assert publisher.fb_api is None
+        assert publisher.page is None
+        assert not publisher._authenticated
+    
+    @pytest.mark.asyncio
+    async def test_facebook_engagement_optimization(self, sample_content_fitness):
+        """Test Facebook engagement optimization"""
+        publisher = FacebookEnhancedPublisher(client_id="test_client")
+        
+        engagement_opts = await publisher.engagement_optimizer.optimize_for_engagement(
+            sample_content_fitness,
+            'fitness_wellness'
+        )
+        
+        assert 'optimized_text' in engagement_opts
+        assert 'post_type' in engagement_opts
+        assert 'hashtags' in engagement_opts
+        assert 'engagement_elements' in engagement_opts
+        assert 'targeting_suggestions' in engagement_opts
+        assert 'boost_recommendations' in engagement_opts
+    
+    @pytest.mark.asyncio
+    async def test_facebook_cross_platform_posting(self):
+        """Test Facebook cross-platform posting to Instagram"""
+        publisher = FacebookEnhancedPublisher(client_id="test_client")
+        publisher.page_data = {
+            'followers_count': 25000,
+            'instagram_connected': True,
+            'creator_bonus_eligible': True
+        }
+        
+        # Mock Instagram user
+        publisher.ig_user = Mock()
+        publisher.ig_user.create_media = Mock(return_value={'id': 'container_123'})
+        publisher.ig_user.publish_media = Mock(return_value={'id': 'ig_post_123'})
+        
+        content = {'text': 'Test post', 'image_url': 'https://example.com/image.jpg'}
+        optimizations = {'optimized_text': 'Optimized test post'}
+        
+        with patch('asyncio.sleep', new_callable=AsyncMock):
+            ig_id = await publisher._crosspost_to_instagram(content, optimizations)
+        
+        assert ig_id == 'ig_post_123'
+    
     # Cross-Platform Tests
     @pytest.mark.asyncio
     async def test_universal_niche_detection(self):
@@ -332,7 +432,9 @@ class TestUniversalPlatformPublishers:
         publishers = [
             YouTubeEnhancedPublisher("test"),
             LinkedInEnhancedPublisher("test"),
-            TikTokEnhancedPublisher("test")
+            TikTokEnhancedPublisher("test"),
+            TwitterEnhancedPublisher("test"),
+            FacebookEnhancedPublisher("test")
         ]
         
         for publisher in publishers:
@@ -362,7 +464,9 @@ class TestUniversalPlatformPublishers:
         publishers = [
             YouTubeEnhancedPublisher("test"),
             LinkedInEnhancedPublisher("test"),
-            TikTokEnhancedPublisher("test")
+            TikTokEnhancedPublisher("test"),
+            TwitterEnhancedPublisher("test"),
+            FacebookEnhancedPublisher("test")
         ]
         
         for publisher in publishers:
@@ -429,6 +533,32 @@ class TestUniversalPlatformPublishers:
         )
         assert 'algorithm_hacks' in tiktok_opt
         assert 'growth_tactics' in tiktok_opt
+        
+        # Twitter - should focus on threads and engagement
+        twitter_pub = TwitterEnhancedPublisher("test")
+        twitter_pub.detect_business_niche = AsyncMock(return_value='business_consulting')
+        twitter_pub.account_data = {'followers_count': 10000}
+        
+        twitter_opt = await twitter_pub.get_platform_optimizations(
+            base_content,
+            'business_consulting'
+        )
+        assert 'algorithm_optimizations' in twitter_opt
+        assert 'engagement_tactics' in twitter_opt
+        assert twitter_opt['algorithm_optimizations']['use_threads'] is True
+        
+        # Facebook - should focus on multimedia and boosting
+        facebook_pub = FacebookEnhancedPublisher("test")
+        facebook_pub.detect_business_niche = AsyncMock(return_value='business_consulting')
+        facebook_pub.page_data = {'followers_count': 20000}
+        
+        facebook_opt = await facebook_pub.get_platform_optimizations(
+            base_content,
+            'business_consulting'
+        )
+        assert 'algorithm_optimizations' in facebook_opt
+        assert 'boost_strategy' in facebook_opt
+        assert facebook_opt['algorithm_optimizations']['prioritize_video'] is True
     
     @pytest.mark.asyncio
     async def test_error_handling_across_platforms(self):
@@ -436,7 +566,9 @@ class TestUniversalPlatformPublishers:
         publishers = [
             YouTubeEnhancedPublisher("test"),
             LinkedInEnhancedPublisher("test"),
-            TikTokEnhancedPublisher("test")
+            TikTokEnhancedPublisher("test"),
+            TwitterEnhancedPublisher("test"),
+            FacebookEnhancedPublisher("test")
         ]
         
         for publisher in publishers:
@@ -462,7 +594,9 @@ class TestUniversalPlatformPublishers:
         publishers = [
             YouTubeEnhancedPublisher("test"),
             LinkedInEnhancedPublisher("test"),
-            TikTokEnhancedPublisher("test")
+            TikTokEnhancedPublisher("test"),
+            TwitterEnhancedPublisher("test"),
+            FacebookEnhancedPublisher("test")
         ]
         
         for publisher in publishers:
@@ -503,7 +637,9 @@ class TestUniversalPlatformPublishers:
         publishers = [
             YouTubeEnhancedPublisher("test"),
             LinkedInEnhancedPublisher("test"),
-            TikTokEnhancedPublisher("test")
+            TikTokEnhancedPublisher("test"),
+            TwitterEnhancedPublisher("test"),
+            FacebookEnhancedPublisher("test")
         ]
         
         for publisher in publishers:
@@ -526,3 +662,60 @@ class TestUniversalPlatformPublishers:
                 patterns = audience_data['engagement_patterns']
                 assert 'peak_hours' in patterns
                 assert 'peak_days' in patterns
+    
+    @pytest.mark.asyncio
+    async def test_monetization_strategies_per_platform(self):
+        """Test that each platform has appropriate monetization strategies"""
+        content = {'text': 'Test content for monetization', 'video_url': 'https://example.com/video.mp4'}
+        
+        # YouTube - Ad revenue, sponsorships, memberships
+        youtube_pub = YouTubeEnhancedPublisher("test")
+        youtube_pub.detect_business_niche = AsyncMock(return_value='education')
+        youtube_opts = await youtube_pub.optimize_for_revenue(content)
+        
+        youtube_strategies = youtube_opts['revenue_optimization']['monetization_strategies']
+        assert 'ad_revenue' in youtube_strategies
+        assert 'channel_memberships' in youtube_strategies
+        assert 'super_chat' in youtube_strategies
+        
+        # LinkedIn - Lead generation, sponsored content
+        linkedin_pub = LinkedInEnhancedPublisher("test")
+        linkedin_pub.detect_business_niche = AsyncMock(return_value='business_consulting')
+        linkedin_opts = await linkedin_pub.optimize_for_revenue(content)
+        
+        linkedin_strategies = linkedin_opts['revenue_optimization']['monetization_strategies']
+        assert 'lead_generation' in linkedin_strategies
+        assert 'sponsored_content' in linkedin_strategies
+        assert 'linkedin_newsletter' in linkedin_strategies
+        
+        # TikTok - Creator fund, live gifts, brand partnerships
+        tiktok_pub = TikTokEnhancedPublisher("test")
+        tiktok_pub.detect_business_niche = AsyncMock(return_value='creative')
+        tiktok_opts = await tiktok_pub.optimize_for_revenue(content)
+        
+        tiktok_strategies = tiktok_opts['revenue_optimization']['monetization_strategies']
+        assert 'creator_fund' in tiktok_strategies
+        assert 'live_gifts' in tiktok_strategies
+        assert 'brand_partnerships' in tiktok_strategies
+        
+        # Twitter - Twitter Blue, Super Follows, Spaces
+        twitter_pub = TwitterEnhancedPublisher("test")
+        twitter_pub.detect_business_niche = AsyncMock(return_value='technology')
+        twitter_pub.account_data = {'followers_count': 15000}
+        twitter_opts = await twitter_pub.optimize_for_revenue(content)
+        
+        twitter_strategies = twitter_opts['revenue_optimization']['monetization_strategies']
+        assert 'twitter_blue_revenue_sharing' in twitter_strategies
+        assert 'super_follows' in twitter_strategies
+        assert 'ticketed_spaces' in twitter_strategies
+        
+        # Facebook - Creator bonus, in-stream ads, Stars
+        facebook_pub = FacebookEnhancedPublisher("test")
+        facebook_pub.detect_business_niche = AsyncMock(return_value='fitness_wellness')
+        facebook_pub.page_data = {'followers_count': 30000}
+        facebook_opts = await facebook_pub.optimize_for_revenue(content)
+        
+        facebook_strategies = facebook_opts['revenue_optimization']['monetization_strategies']
+        assert 'creator_bonus' in facebook_strategies
+        assert 'in_stream_ads' in facebook_strategies
+        assert 'facebook_stars' in facebook_strategies
