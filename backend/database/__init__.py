@@ -6,21 +6,19 @@ that works universally across all business niches.
 """
 
 from backend.database.connection import (
-    PostgreSQLConnectionManager,
-    get_db_manager,
-    close_db_manager,
-    DatabaseConnectionError,
-    DatabasePoolError,
-    DatabaseQueryError,
-    DatabaseTransactionError,
+    get_db_session,
+    get_db_context,
+    init_database,
+    close_database,
+    check_database_connection,
+    Base,
 )
 
 __all__ = [
-    "PostgreSQLConnectionManager",
-    "get_db_manager",
-    "close_db_manager",
-    "DatabaseConnectionError",
-    "DatabasePoolError",
-    "DatabaseQueryError",
-    "DatabaseTransactionError",
+    "get_db_session",
+    "get_db_context",
+    "init_database",
+    "close_database",
+    "check_database_connection",
+    "Base",
 ]
