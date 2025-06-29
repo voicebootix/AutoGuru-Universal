@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 import uvicorn
 from celery import Celery
 from celery.result import AsyncResult
+from fastapi import WebSocket, WebSocketDisconnect
 
 # Import settings based on environment
 try:
@@ -1021,6 +1022,45 @@ async def get_bi_dashboard(
     except Exception as e:
         logger.error(f"BI dashboard failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# WebSocket endpoint for real-time BI dashboard
+@app.websocket("/ws/bi-dashboard")
+async def websocket_bi_dashboard(websocket: WebSocket):
+    """WebSocket endpoint for real-time Business Intelligence dashboard updates"""
+    # Import here to avoid circular imports
+    from backend.intelligence.realtime_streaming import (
+        RealTimeMetricsStreamer,
+        WebSocketMetricsHandler
+    )
+    
+    # Initialize streamer (in production, this would be a singleton)
+    streamer = RealTimeMetricsStreamer()
+    await streamer.initialize()
+    
+    handler = WebSocketMetricsHandler(streamer)
+    
+    try:
+        # Accept connection
+        await handler.connect(websocket)
+        
+        # Handle messages
+        while True:
+            try:
+                data = await websocket.receive_json()
+                await handler.handle_message(websocket, data)
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+                await websocket.send_json({
+                    "type": "error",
+                    "message": str(e)
+                })
+                
+    finally:
+        await handler.disconnect(websocket)
+        await streamer.close()
 
 
 if __name__ == "__main__":
