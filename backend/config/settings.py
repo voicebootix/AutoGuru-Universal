@@ -55,6 +55,7 @@ class RateLimitConfig(BaseSettings):
     
     class Config:
         env_prefix = "RATE_LIMIT_"
+        extra = "allow"
 
 
 class DatabaseConfig(BaseSettings):
@@ -68,7 +69,7 @@ class DatabaseConfig(BaseSettings):
     postgres_db: str = Field("autoguru_universal", description="PostgreSQL database name")
     
     # Alternative: Full database URL (for Render deployment)
-    database_url: Optional[str] = Field(None, description="Full database URL")
+    database_url: Optional[str] = Field(None, alias="DATABASE_URL")
     
     # Connection pool settings
     pool_size: int = Field(20, description="Database connection pool size")
@@ -124,10 +125,7 @@ class DatabaseConfig(BaseSettings):
     
     class Config:
         env_prefix = "DB_"
-        # Also allow DATABASE_URL without prefix
-        fields = {
-            "database_url": {"env": "DATABASE_URL"}
-        }
+        extra = "allow"
 
 
 class AIServiceConfig(BaseSettings):
@@ -151,6 +149,7 @@ class AIServiceConfig(BaseSettings):
     
     class Config:
         env_prefix = "AI_"
+        extra = "allow"
 
 
 class SocialMediaConfig(BaseSettings):
@@ -184,6 +183,7 @@ class SocialMediaConfig(BaseSettings):
     
     class Config:
         env_prefix = "SOCIAL_"
+        extra = "allow"
 
 
 class SecurityConfig(BaseSettings):
@@ -217,6 +217,7 @@ class SecurityConfig(BaseSettings):
     
     class Config:
         env_prefix = "SECURITY_"
+        extra = "allow"
     
     @validator("encryption_key")
     def validate_encryption_key(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
@@ -257,6 +258,7 @@ class LoggingConfig(BaseSettings):
     
     class Config:
         env_prefix = "LOG_"
+        extra = "allow"
 
 
 class Settings(BaseSettings):
@@ -303,6 +305,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "allow"
         
     @validator("environment")
     def validate_environment(cls, v: Environment) -> Environment:

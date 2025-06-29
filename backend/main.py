@@ -30,7 +30,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 # Import settings based on environment
 try:
-    from backend.config.production import production_settings as settings
+    from backend.config.production import get_production_settings
+    settings = get_production_settings()
     ENVIRONMENT = "production"
 except ImportError:
     from backend.config.settings import get_settings

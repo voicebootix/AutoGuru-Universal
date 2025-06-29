@@ -17,25 +17,34 @@ class LogLevel(str, Enum):
 
 class DatabaseConfig(BaseModel):
     """Database configuration for production"""
-    url: str = Field(..., description="Database connection URL")
+    database_url: str = Field(..., alias="DATABASE_URL", description="Database connection URL")
     pool_size: int = Field(default=10, description="Connection pool size")
     max_overflow: int = Field(default=20, description="Max overflow connections")
     echo: bool = Field(default=False, description="Enable SQL echo")
+    
+    class Config:
+        extra = "allow"
 
 class RedisConfig(BaseModel):
     """Redis configuration for production"""
-    url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
+    url: str = Field(default="redis://localhost:6379", alias="REDIS_URL", description="Redis connection URL")
     max_connections: int = Field(default=20, description="Max Redis connections")
+    
+    class Config:
+        extra = "allow"
 
 class CeleryConfig(BaseModel):
     """Celery configuration for production"""
-    broker_url: str = Field(default="redis://localhost:6379", description="Celery broker URL")
-    result_backend: str = Field(default="redis://localhost:6379", description="Celery result backend")
+    broker_url: str = Field(default="redis://localhost:6379", alias="CELERY_BROKER_URL", description="Celery broker URL")
+    result_backend: str = Field(default="redis://localhost:6379", alias="CELERY_RESULT_BACKEND", description="Celery result backend")
     task_serializer: str = Field(default="json", description="Task serializer")
     accept_content: List[str] = Field(default=["json"], description="Accepted content types")
     result_serializer: str = Field(default="json", description="Result serializer")
     timezone: str = Field(default="UTC", description="Timezone")
     enable_utc: bool = Field(default=True, description="Enable UTC")
+    
+    class Config:
+        extra = "allow"
 
 class LoggingConfig(BaseModel):
     """Logging configuration for production"""
@@ -46,13 +55,19 @@ class LoggingConfig(BaseModel):
     )
     enable_file_logging: bool = Field(default=False, description="Enable file logging")
     log_file_path: str = Field(default="logs/autoguru.log", description="Log file path")
+    
+    class Config:
+        extra = "allow"
 
 class SecurityConfig(BaseModel):
     """Security configuration for production"""
-    secret_key: str = Field(..., description="Secret key for encryption")
+    secret_key: str = Field(..., alias="SECRET_KEY", description="Secret key for encryption")
     algorithm: str = Field(default="HS256", description="JWT algorithm")
     access_token_expire_minutes: int = Field(default=30, description="Access token expiry")
     cors_origins: List[str] = Field(default=["*"], description="CORS origins")
+    
+    class Config:
+        extra = "allow"
 
 class ProductionSettings(BaseModel):
     """Production settings for AutoGuru Universal"""
@@ -100,6 +115,7 @@ class ProductionSettings(BaseModel):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "allow"  # Allow extra fields to prevent validation errors
 
 def get_production_settings() -> ProductionSettings:
     """Get production settings from environment variables"""
@@ -133,7 +149,7 @@ def get_production_settings() -> ProductionSettings:
         debug=os.getenv("DEBUG", "false").lower() == "true",
         
         database=DatabaseConfig(
-            url=database_url,
+            database_url=database_url,
             pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
             echo=os.getenv("DB_ECHO", "false").lower() == "true"
