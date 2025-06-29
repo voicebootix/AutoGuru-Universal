@@ -27,6 +27,8 @@ import uvicorn
 from celery import Celery
 from celery.result import AsyncResult
 from fastapi import WebSocket, WebSocketDisconnect
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+import sentry_sdk
 
 # Import settings based on environment
 try:
@@ -1063,6 +1065,72 @@ async def websocket_bi_dashboard(websocket: WebSocket):
         await handler.disconnect(websocket)
         await streamer.close()
 
+
+# Sentry integration
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=1.0)
+
+# Prometheus metrics
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'http_status'])
+REQUEST_LATENCY = Histogram('http_request_latency_seconds', 'HTTP request latency', ['endpoint'])
+
+# Global rate limiting state (in-memory, for demo; use Redis for distributed)
+RATE_LIMIT_STATE = {}
+
+@app.middleware("http")
+async def rate_limit_and_metrics_middleware(request: Request, call_next):
+    # Prometheus metrics
+    endpoint = request.url.path
+    method = request.method
+    start_time = time.time()
+    client_ip = request.client.host
+    key = f"{client_ip}:{endpoint}"
+    now = int(time.time())
+    minute = now // 60
+    hour = now // 3600
+    # Rate limit config
+    rpm = getattr(settings.rate_limit, 'requests_per_minute', 60)
+    rph = getattr(settings.rate_limit, 'requests_per_hour', 3600)
+    # Track requests
+    state = RATE_LIMIT_STATE.setdefault(key, {'minute': minute, 'minute_count': 0, 'hour': hour, 'hour_count': 0})
+    if state['minute'] != minute:
+        state['minute'] = minute
+        state['minute_count'] = 0
+    if state['hour'] != hour:
+        state['hour'] = hour
+        state['hour_count'] = 0
+    state['minute_count'] += 1
+    state['hour_count'] += 1
+    # Enforce limits
+    if state['minute_count'] > rpm or state['hour_count'] > rph:
+        logger.warning(f"Rate limit exceeded for {client_ip} on {endpoint}")
+        REQUEST_COUNT.labels(method, endpoint, 429).inc()
+        return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
+    # Process request
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception as e:
+        status_code = 500
+        if SENTRY_DSN:
+            sentry_sdk.capture_exception(e)
+        raise
+    finally:
+        elapsed = time.time() - start_time
+        REQUEST_COUNT.labels(method, endpoint, status_code).inc()
+        REQUEST_LATENCY.labels(endpoint).observe(elapsed)
+    return response
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+@app.get("/support", tags=["Support"])
+def support():
+    support_email = os.getenv("SUPPORT_EMAIL", "support@autoguru.com")
+    support_url = os.getenv("SUPPORT_URL", "https://autoguru.com/support")
+    return {"email": support_email, "url": support_url}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
