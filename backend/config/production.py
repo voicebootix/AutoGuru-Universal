@@ -17,7 +17,7 @@ class LogLevel(str, Enum):
 
 class DatabaseConfig(BaseModel):
     """Database configuration for production"""
-    database_url: str = Field(..., alias="DATABASE_URL", description="Database connection URL")
+    database_url: str = Field(..., description="Database connection URL")
     pool_size: int = Field(default=10, description="Connection pool size")
     max_overflow: int = Field(default=20, description="Max overflow connections")
     echo: bool = Field(default=False, description="Enable SQL echo")
