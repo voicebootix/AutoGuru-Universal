@@ -61,7 +61,7 @@ class LoggingConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security configuration for production"""
-    secret_key: str = Field(..., alias="SECRET_KEY", description="Secret key for encryption")
+    secret_key: str = Field(..., description="Secret key for encryption")
     algorithm: str = Field(default="HS256", description="JWT algorithm")
     access_token_expire_minutes: int = Field(default=30, description="Access token expiry")
     cors_origins: List[str] = Field(default=["*"], description="CORS origins")
