@@ -60,12 +60,15 @@ class RateLimitConfig(BaseSettings):
 class DatabaseConfig(BaseSettings):
     """Database configuration settings"""
     
-    # PostgreSQL settings
-    postgres_user: str = Field(..., description="PostgreSQL username")
-    postgres_password: SecretStr = Field(..., description="PostgreSQL password")
+    # PostgreSQL settings - can be provided individually or via DATABASE_URL
+    postgres_user: Optional[str] = Field(None, description="PostgreSQL username")
+    postgres_password: Optional[SecretStr] = Field(None, description="PostgreSQL password")
     postgres_host: str = Field("localhost", description="PostgreSQL host")
     postgres_port: int = Field(5432, description="PostgreSQL port")
     postgres_db: str = Field("autoguru_universal", description="PostgreSQL database name")
+    
+    # Alternative: Full database URL (for Render deployment)
+    database_url: Optional[str] = Field(None, description="Full database URL")
     
     # Connection pool settings
     pool_size: int = Field(20, description="Database connection pool size")
@@ -83,6 +86,14 @@ class DatabaseConfig(BaseSettings):
     @property
     def postgres_dsn(self) -> PostgresDsn:
         """Construct PostgreSQL DSN"""
+        # If DATABASE_URL is provided, use it directly
+        if self.database_url:
+            return PostgresDsn(self.database_url)
+        
+        # Otherwise, construct from individual parameters
+        if not self.postgres_user or not self.postgres_password:
+            raise ValueError("Either DATABASE_URL or both postgres_user and postgres_password must be provided")
+        
         return PostgresDsn.build(
             scheme="postgresql+asyncpg",
             user=self.postgres_user,
@@ -113,19 +124,23 @@ class DatabaseConfig(BaseSettings):
     
     class Config:
         env_prefix = "DB_"
+        # Also allow DATABASE_URL without prefix
+        fields = {
+            "database_url": {"env": "DATABASE_URL"}
+        }
 
 
 class AIServiceConfig(BaseSettings):
     """AI service configuration for universal business support"""
     
     # OpenAI configuration
-    openai_api_key: SecretStr = Field(..., description="OpenAI API key")
+    openai_api_key: Optional[SecretStr] = Field(None, description="OpenAI API key")
     openai_model: str = Field("gpt-4-turbo-preview", description="Default OpenAI model")
     openai_temperature: float = Field(0.7, description="OpenAI temperature setting")
     openai_max_tokens: int = Field(2000, description="Maximum tokens for OpenAI responses")
     
     # Anthropic configuration
-    anthropic_api_key: SecretStr = Field(..., description="Anthropic API key")
+    anthropic_api_key: Optional[SecretStr] = Field(None, description="Anthropic API key")
     anthropic_model: str = Field("claude-3-opus-20240229", description="Default Anthropic model")
     anthropic_max_tokens: int = Field(2000, description="Maximum tokens for Anthropic responses")
     
@@ -175,8 +190,8 @@ class SecurityConfig(BaseSettings):
     """Security configuration settings"""
     
     # Encryption settings
-    encryption_key: SecretStr = Field(..., description="Master encryption key for sensitive data")
-    jwt_secret_key: SecretStr = Field(..., description="JWT secret key")
+    encryption_key: Optional[SecretStr] = Field(None, description="Master encryption key for sensitive data")
+    jwt_secret_key: Optional[SecretStr] = Field(None, description="JWT secret key")
     jwt_algorithm: str = Field("HS256", description="JWT algorithm")
     jwt_expiration_hours: int = Field(24, description="JWT token expiration in hours")
     
@@ -193,14 +208,21 @@ class SecurityConfig(BaseSettings):
     @property
     def fernet_key(self) -> Fernet:
         """Get Fernet encryption instance"""
+        if not self.encryption_key:
+            # Generate a key if not provided (for development/deployment)
+            from cryptography.fernet import Fernet
+            key = Fernet.generate_key()
+            return Fernet(key)
         return Fernet(self.encryption_key.get_secret_value().encode())
     
     class Config:
         env_prefix = "SECURITY_"
     
     @validator("encryption_key")
-    def validate_encryption_key(cls, v: SecretStr) -> SecretStr:
+    def validate_encryption_key(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
         """Validate encryption key format"""
+        if v is None:
+            return v
         key = v.get_secret_value()
         try:
             Fernet(key.encode())

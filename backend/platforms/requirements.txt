@@ -1,0 +1,56 @@
+# Platform API Dependencies
+google-api-python-client==2.95.0
+google-auth==2.22.0
+google-auth-oauthlib==1.0.0
+google-auth-httplib2==0.1.0
+python-linkedin-v2==0.9.4
+TikTokApi==5.2.2
+tweepy==4.14.0
+facebook-business==17.0.0
+
+# Media Processing
+Pillow==10.0.0
+opencv-python==4.8.0.76
+moviepy==1.0.3
+ffmpeg-python==0.2.0
+
+# AI/ML Services
+openai==0.27.8
+anthropic==0.3.11
+transformers==4.31.0
+torch==2.0.1
+
+# Analytics and Data
+pandas==2.0.3
+numpy==1.25.2
+matplotlib==3.7.2
+seaborn==0.12.2
+
+# Database
+sqlalchemy==2.0.19
+alembic==1.11.2
+asyncpg==0.28.0
+redis==4.6.0
+
+# Web/API
+aiohttp==3.8.5
+httpx==0.24.1
+fastapi==0.101.0
+pydantic==2.1.1
+
+# Security
+cryptography==41.0.3
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Testing
+pytest==7.4.0
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+
+# Utilities
+python-dotenv==1.0.0
+pytz==2023.3
+dateparser==1.1.8
+validators==0.20.0
