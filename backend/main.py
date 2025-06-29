@@ -40,7 +40,7 @@ except ImportError:
     settings = get_settings()
     ENVIRONMENT = "development"
 
-from backend.database.connection import get_db_manager, PostgreSQLConnectionManager
+from backend.database.connection import get_db_session, get_db_context
 from backend.core.content_analyzer import UniversalContentAnalyzer
 from backend.models.content_models import (
     ContentAnalysis,
@@ -377,9 +377,9 @@ async def lifespan(app: FastAPI):
     try:
         if ENVIRONMENT == "production":
             # Production database initialization
-            db_manager = get_db_manager()
-            await db_manager.initialize()
-            logger.info("Database initialized successfully")
+            async with get_db_session() as session:
+                # use session for DB operations
+                logger.info("Database initialized successfully")
     except Exception as e:
         logger.warning(f"Database initialization failed: {e}")
     

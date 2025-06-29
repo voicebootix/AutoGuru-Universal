@@ -42,7 +42,7 @@ from backend.models.content_models import (
     ContentFormat
 )
 from backend.utils.encryption import EncryptionManager
-from backend.database.connection import get_db_manager
+from backend.database.connection import get_db_session, get_db_context
 # from backend.core.content_analyzer import ContentAnalyzer  # Will implement later
 
 logger = logging.getLogger(__name__)
@@ -840,27 +840,26 @@ class InstagramPublisher(BasePlatformPublisher):
             # or store in database for later publishing via scheduled tasks
             
             # For now, store scheduling info in database
-            db_manager = await get_db_manager()
-            
-            schedule_data = {
-                'business_id': self.business_id,
-                'platform': 'instagram',
-                'content': content.dict(),
-                'publish_time': publish_time.isoformat(),
-                'status': 'scheduled',
-                'created_at': datetime.utcnow().isoformat()
-            }
-            
-            # Store in database (simplified)
-            schedule_id = f"ig_schedule_{self.business_id}_{int(datetime.utcnow().timestamp())}"
-            
-            return ScheduleResult(
-                status=PublishStatus.SCHEDULED,
-                platform=Platform.INSTAGRAM,
-                schedule_id=schedule_id,
-                scheduled_time=publish_time,
-                confirmation_url=f"https://business.facebook.com/creatorstudio/scheduled"
-            )
+            async with get_db_session() as session:
+                schedule_data = {
+                    'business_id': self.business_id,
+                    'platform': 'instagram',
+                    'content': content.dict(),
+                    'publish_time': publish_time.isoformat(),
+                    'status': 'scheduled',
+                    'created_at': datetime.utcnow().isoformat()
+                }
+                
+                # Store in database (simplified)
+                schedule_id = f"ig_schedule_{self.business_id}_{int(datetime.utcnow().timestamp())}"
+                
+                return ScheduleResult(
+                    status=PublishStatus.SCHEDULED,
+                    platform=Platform.INSTAGRAM,
+                    schedule_id=schedule_id,
+                    scheduled_time=publish_time,
+                    confirmation_url=f"https://business.facebook.com/creatorstudio/scheduled"
+                )
             
         except Exception as e:
             logger.error(f"Failed to schedule content: {str(e)}")

@@ -35,7 +35,7 @@ from backend.config.settings import get_settings
 from backend.core.content_analyzer import UniversalContentAnalyzer, BusinessNiche, Platform
 from backend.core.persona_factory import PersonaFactory  # To be implemented
 from backend.core.viral_engine import ViralContentEngine  # To be implemented
-from backend.database.connection import get_db_manager, PostgreSQLConnectionManager
+from backend.database.connection import get_db_session, get_db_context
 from backend.utils.encryption import EncryptionManager
 from backend.models.content_models import (
     ContentAnalysis, PlatformContent, AudienceProfile,

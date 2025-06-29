@@ -24,7 +24,7 @@ from backend.models.content_models import (
 from backend.services.analytics_service import UniversalAnalyticsService
 from backend.core.content_analyzer import UniversalContentAnalyzer, ContentAnalysisResult
 from backend.utils.encryption import EncryptionManager
-from backend.database.connection import PostgreSQLConnectionManager
+from backend.database.connection import get_db_session, get_db_context
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +107,6 @@ class RevenueTracker:
         self.client_id = client_id
         self.platform_name = platform_name
         self.analytics_service = UniversalAnalyticsService()
-        self.db_manager = PostgreSQLConnectionManager()
-        self.content_analyzer = UniversalContentAnalyzer()
         
     async def track_post_revenue(self, post_id: str, content: Dict[str, Any]) -> Dict[str, float]:
         """Track revenue attribution for a specific post"""
@@ -132,7 +130,8 @@ class RevenueTracker:
             )
             
             # Store in database
-            await self._store_revenue_data(post_id, revenue_data)
+            async with get_db_session() as session:
+                await self._store_revenue_data(session, post_id, revenue_data)
             
             return revenue_data
             
@@ -278,7 +277,7 @@ class RevenueTracker:
         }
         return platform_rpm.get(self.platform_name.lower(), 0.0)
     
-    async def _store_revenue_data(self, post_id: str, revenue_data: Dict[str, float]):
+    async def _store_revenue_data(self, session, post_id: str, revenue_data: Dict[str, float]):
         """Store revenue data in database"""
         # Implementation would store in database
         logger.info(f"Storing revenue data for post {post_id}: {revenue_data}")

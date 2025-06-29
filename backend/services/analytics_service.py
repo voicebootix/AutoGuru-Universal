@@ -25,9 +25,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from backend.models.content_models import (
     Platform, BusinessNicheType, ContentFormat, BusinessNiche
 )
-from backend.database.connection import PostgreSQLConnectionManager
 from backend.config.settings import get_settings
 from backend.utils.encryption import EncryptionService
+from backend.database.connection import get_db_session, get_db_context
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -574,22 +574,16 @@ class UniversalAnalyticsService:
     without hardcoding business-specific logic.
     """
     
-    def __init__(self, db_manager: Optional[PostgreSQLConnectionManager] = None):
-        """
-        Initialize the analytics service.
-        
-        Args:
-            db_manager: Database connection manager instance
-        """
-        self.db_manager = db_manager or PostgreSQLConnectionManager()
+    def __init__(self):
         self.encryption_service = EncryptionService()
         self.logger = logger
         self._platform_clients = {}  # Cache for platform API clients
         
     async def initialize(self) -> None:
         """Initialize the analytics service and database connection"""
-        if not self.db_manager._is_initialized:
-            await self.db_manager.initialize()
+        async with get_db_session() as session:
+            # use session for DB operations
+            pass
             
     # CONTENT PERFORMANCE TRACKING
     async def track_content_performance(
@@ -832,7 +826,8 @@ class UniversalAnalyticsService:
             LIMIT 1
         """
         
-        result = await self.db_manager.fetch_one(query, content_id, platform.value)
+        async with get_db_session() as session:
+            result = await session.fetch_one(query, content_id, platform.value)
         
         if result:
             return json.loads(result['metrics_data'])
@@ -901,7 +896,8 @@ class UniversalAnalyticsService:
             WHERE content_id = $1
         """
         
-        result = await self.db_manager.fetch_one(query, content_id)
+        async with get_db_session() as session:
+            result = await session.fetch_one(query, content_id)
         
         if result:
             return dict(result)
@@ -927,13 +923,14 @@ class UniversalAnalyticsService:
         """
         
         metrics_json = json.dumps(metrics.dict())
-        await self.db_manager.execute(
-            query,
-            metrics.content_id,
-            metrics.platform.value,
-            metrics_json,
-            datetime.utcnow()
-        )
+        async with get_db_session() as session:
+            await session.execute(
+                query,
+                metrics.content_id,
+                metrics.platform.value,
+                metrics_json,
+                datetime.utcnow()
+            )
 
     # AUDIENCE ANALYTICS
     async def analyze_audience_growth(
@@ -1256,7 +1253,8 @@ class UniversalAnalyticsService:
             LIMIT 1
         """
         
-        result = await self.db_manager.fetch_one(query, content_id, platform.value)
+        async with get_db_session() as session:
+            result = await session.fetch_one(query, content_id, platform.value)
         
         if result:
             return PerformanceMetrics(**json.loads(result['metrics_data']))
@@ -1272,7 +1270,8 @@ class UniversalAnalyticsService:
             WHERE content_id = $1
         """
         
-        results = await self.db_manager.fetch_all(query, content_id)
+        async with get_db_session() as session:
+            results = await session.fetch_all(query, content_id)
         
         aggregated = {
             'total_engagement': 0,

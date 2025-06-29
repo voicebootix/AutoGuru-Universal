@@ -30,8 +30,8 @@ from backend.models.content_models import (
     BrandVoice, ContentTheme, ContentFormat
 )
 from backend.utils.encryption import EncryptionManager
-from backend.database.connection import PostgreSQLConnectionManager
 from backend.config.settings import get_settings
+from backend.database.connection import get_db_session, get_db_context
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -229,8 +229,7 @@ class UniversalClientService:
     def __init__(
         self,
         content_analyzer: Optional[UniversalContentAnalyzer] = None,
-        encryption_manager: Optional[EncryptionManager] = None,
-        db_manager: Optional[PostgreSQLConnectionManager] = None
+        encryption_manager: Optional[EncryptionManager] = None
     ):
         """
         Initialize the UniversalClientService.
@@ -238,12 +237,10 @@ class UniversalClientService:
         Args:
             content_analyzer: Content analyzer instance
             encryption_manager: Encryption manager instance
-            db_manager: Database connection manager
         """
         self.settings = get_settings()
         self.content_analyzer = content_analyzer or self._create_content_analyzer()
         self.encryption_manager = encryption_manager or EncryptionManager()
-        self.db_manager = db_manager or PostgreSQLConnectionManager()
         
     def _create_content_analyzer(self) -> UniversalContentAnalyzer:
         """Create content analyzer with configured API keys"""
