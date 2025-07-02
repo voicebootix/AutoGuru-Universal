@@ -29,6 +29,7 @@ from celery.result import AsyncResult
 from fastapi import WebSocket, WebSocketDisconnect
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import sentry_sdk
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Import settings based on environment
 try:
@@ -329,13 +330,9 @@ class RequestIdMiddleware:
         return response
 
 
-class ErrorHandlerMiddleware:
-    """Global error handling middleware"""
-    
-    def __init__(self, app):
-        self.app = app
-    
-    async def __call__(self, request: Request, call_next):
+class ErrorHandlerMiddleware(BaseHTTPMiddleware):
+    """Global error handling middleware (class-based for Starlette/FastAPI)"""
+    async def dispatch(self, request, call_next):
         try:
             return await call_next(request)
         except HTTPException:
