@@ -305,28 +305,20 @@ class ApprovePricingRequest(BaseModel):
 
 
 # Middleware
-class RequestIdMiddleware:
-    """Middleware to add request ID for tracking"""
-    
-    def __init__(self, app):
-        self.app = app
-    
-    async def __call__(self, request: Request, call_next):
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Middleware to add request ID for tracking (class-based for Starlette/FastAPI)"""
+    async def dispatch(self, request, call_next):
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
-        
         start_time = time.time()
         response = await call_next(request)
         process_time = time.time() - start_time
-        
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = str(process_time)
-        
         logger.info(
             f"Request {request_id} - {request.method} {request.url.path} "
             f"- Status: {response.status_code} - Time: {process_time:.3f}s"
         )
-        
         return response
 
 
