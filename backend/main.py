@@ -1539,8 +1539,8 @@ async def rate_limit_and_metrics_middleware(request: Request, call_next):
     minute = now // 60
     hour = now // 3600
     # Rate limit config
-    rpm = getattr(settings.rate_limit, 'requests_per_minute', 60)
-    rph = getattr(settings.rate_limit, 'requests_per_hour', 3600)
+    rpm = getattr(settings, 'rate_limit_requests', 60)
+    rph = getattr(settings, 'rate_limit_requests_per_hour', 3600)
     # Track requests
     state = RATE_LIMIT_STATE.setdefault(key, {'minute': minute, 'minute_count': 0, 'hour': hour, 'hour_count': 0})
     if state['minute'] != minute:
