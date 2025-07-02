@@ -491,6 +491,455 @@ async def api_health_check():
     }
 
 
+# ============================================
+# RAW DATA DEBUGGING ENDPOINTS FOR FLOWISE
+# ============================================
+
+@app.get("/api/debug/database-raw", tags=["Debug"])
+async def get_database_raw_data():
+    """
+    Get raw database metrics and status information.
+    
+    Returns comprehensive database health data including connection pool status,
+    table sizes, and performance metrics for debugging purposes.
+    """
+    try:
+        from backend.database.connection import health_check as db_health_check
+        
+        # Get basic database health
+        db_health = await db_health_check()
+        
+        # Get additional database metrics
+        additional_metrics = {}
+        try:
+            from sqlalchemy import text
+            engine = await create_db_engine()
+            async with engine.connect() as conn:
+                # Get table sizes and row counts
+                table_query = text("""
+                    SELECT 
+                        schemaname,
+                        tablename,
+                        attname,
+                        n_distinct,
+                        correlation
+                    FROM pg_stats 
+                    WHERE schemaname = 'public'
+                    LIMIT 20
+                """)
+                table_result = await conn.execute(table_query)
+                additional_metrics["table_stats"] = [
+                    {
+                        "schema": row[0],
+                        "table": row[1], 
+                        "column": row[2],
+                        "distinct_values": row[3],
+                        "correlation": row[4]
+                    }
+                    for row in table_result.fetchall()
+                ]
+                
+                # Get connection info
+                conn_query = text("SELECT count(*) FROM pg_stat_activity")
+                conn_result = await conn.execute(conn_query)
+                additional_metrics["active_connections"] = conn_result.scalar()
+                
+                # Get database size
+                size_query = text("""
+                    SELECT pg_size_pretty(pg_database_size(current_database())) as db_size,
+                           pg_database_size(current_database()) as db_size_bytes
+                """)
+                size_result = await conn.execute(size_query)
+                size_row = size_result.fetchone()
+                additional_metrics["database_size"] = {
+                    "formatted": size_row[0],
+                    "bytes": size_row[1]
+                }
+                
+        except Exception as e:
+            additional_metrics["error"] = f"Failed to get additional metrics: {str(e)}"
+        
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "database-raw",
+            "status": "success",
+            "data": {
+                **db_health,
+                **additional_metrics
+            },
+            "errors": []
+        }
+        
+    except Exception as e:
+        logger.error(f"Database debug endpoint failed: {e}")
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "database-raw", 
+            "status": "error",
+            "data": {},
+            "errors": [str(e)]
+        }
+
+
+@app.get("/api/debug/system-raw", tags=["Debug"])
+async def get_system_raw_data():
+    """
+    Get raw system metrics and performance data.
+    
+    Returns comprehensive system health information including CPU, memory,
+    disk usage, and network statistics for debugging purposes.
+    """
+    try:
+        import psutil
+        import platform
+        
+        # System information
+        system_info = {
+            "platform": platform.system(),
+            "platform_version": platform.version(),
+            "architecture": platform.machine(),
+            "processor": platform.processor(),
+            "hostname": platform.node()
+        }
+        
+        # CPU metrics
+        cpu_metrics = {
+            "cpu_count": psutil.cpu_count(),
+            "cpu_percent": psutil.cpu_percent(interval=1),
+            "cpu_freq": psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None,
+            "cpu_stats": psutil.cpu_stats()._asdict(),
+            "cpu_times": psutil.cpu_times()._asdict()
+        }
+        
+        # Memory metrics
+        memory = psutil.virtual_memory()
+        memory_metrics = {
+            "total": memory.total,
+            "available": memory.available,
+            "used": memory.used,
+            "free": memory.free,
+            "percent": memory.percent,
+            "formatted": {
+                "total": f"{memory.total / (1024**3):.2f} GB",
+                "available": f"{memory.available / (1024**3):.2f} GB",
+                "used": f"{memory.used / (1024**3):.2f} GB",
+                "free": f"{memory.free / (1024**3):.2f} GB"
+            }
+        }
+        
+        # Disk metrics
+        disk = psutil.disk_usage('/')
+        disk_metrics = {
+            "total": disk.total,
+            "used": disk.used,
+            "free": disk.free,
+            "percent": disk.percent,
+            "formatted": {
+                "total": f"{disk.total / (1024**3):.2f} GB",
+                "used": f"{disk.used / (1024**3):.2f} GB", 
+                "free": f"{disk.free / (1024**3):.2f} GB"
+            }
+        }
+        
+        # Network metrics
+        network = psutil.net_io_counters()
+        network_metrics = {
+            "bytes_sent": network.bytes_sent,
+            "bytes_recv": network.bytes_recv,
+            "packets_sent": network.packets_sent,
+            "packets_recv": network.packets_recv,
+            "connections": len(psutil.net_connections())
+        }
+        
+        # Process metrics
+        process = psutil.Process()
+        process_metrics = {
+            "pid": process.pid,
+            "name": process.name(),
+            "status": process.status(),
+            "create_time": process.create_time(),
+            "cpu_percent": process.cpu_percent(),
+            "memory_percent": process.memory_percent(),
+            "memory_info": process.memory_info()._asdict(),
+            "num_threads": process.num_threads(),
+            "open_files": len(process.open_files()),
+            "connections": len(process.connections())
+        }
+        
+        # Uptime
+        uptime_metrics = {
+            "system_uptime": psutil.boot_time(),
+            "process_uptime": time.time() - process.create_time()
+        }
+        
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "system-raw",
+            "status": "success", 
+            "data": {
+                "system_info": system_info,
+                "cpu_metrics": cpu_metrics,
+                "memory_metrics": memory_metrics,
+                "disk_metrics": disk_metrics,
+                "network_metrics": network_metrics,
+                "process_metrics": process_metrics,
+                "uptime_metrics": uptime_metrics
+            },
+            "errors": []
+        }
+        
+    except Exception as e:
+        logger.error(f"System debug endpoint failed: {e}")
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "system-raw",
+            "status": "error",
+            "data": {},
+            "errors": [str(e)]
+        }
+
+
+@app.get("/api/debug/application-raw", tags=["Debug"])
+async def get_application_raw_data():
+    """
+    Get raw application metrics and status information.
+    
+    Returns comprehensive application health data including API status,
+    recent errors, request rates, and configuration information.
+    """
+    try:
+        # Application configuration
+        config_data = {
+            "environment": ENVIRONMENT,
+            "version": getattr(settings, 'version', '1.0.0'),
+            "debug": getattr(settings, 'debug', False),
+            "database_url": str(settings.database.postgres_dsn).split('@')[1] if '@' in str(settings.database.postgres_dsn) else "hidden",
+            "celery_broker": getattr(settings, 'celery', {}).get('broker_url', 'not_configured') if hasattr(settings, 'celery') else 'not_configured'
+        }
+        
+        # Feature availability
+        features = {
+            "content_analysis": True,
+            "persona_generation": True,
+            "viral_content_creation": True,
+            "content_publishing": True,
+            "business_intelligence": True,
+            "analytics": True,
+            "monitoring": True,
+            "pricing_optimization": True
+        }
+        
+        # API endpoint status (simplified)
+        api_status = {
+            "health_endpoints": ["/health", "/api/v1/health"],
+            "content_endpoints": ["/api/v1/analyze", "/api/v1/generate-persona", "/api/v1/create-viral-content"],
+            "publishing_endpoints": ["/api/v1/publish"],
+            "bi_endpoints": ["/api/v1/bi/usage-analytics", "/api/v1/bi/performance-monitoring", "/api/v1/bi/revenue-tracking"],
+            "debug_endpoints": ["/api/debug/database-raw", "/api/debug/system-raw", "/api/debug/application-raw", "/api/debug/business-raw", "/api/debug/all-raw"]
+        }
+        
+        # Recent application state
+        app_state = {
+            "startup_time": getattr(app.state, 'startup_time', None),
+            "request_count": getattr(app.state, 'request_count', 0),
+            "error_count": getattr(app.state, 'error_count', 0),
+            "active_websockets": len(getattr(app.state, 'websocket_connections', set())),
+            "celery_tasks": {
+                "active": len(celery_app.control.inspect().active() or {}),
+                "reserved": len(celery_app.control.inspect().reserved() or {}),
+                "registered": len(celery_app.control.inspect().registered() or {})
+            }
+        }
+        
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "application-raw",
+            "status": "success",
+            "data": {
+                "config_data": config_data,
+                "features": features,
+                "api_status": api_status,
+                "app_state": app_state
+            },
+            "errors": []
+        }
+        
+    except Exception as e:
+        logger.error(f"Application debug endpoint failed: {e}")
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "application-raw",
+            "status": "error",
+            "data": {},
+            "errors": [str(e)]
+        }
+
+
+@app.get("/api/debug/business-raw", tags=["Debug"])
+async def get_business_raw_data():
+    """
+    Get raw business metrics and revenue system status.
+    
+    Returns comprehensive business intelligence data including revenue tracking,
+    subscription metrics, content generation statistics, and user activity.
+    """
+    try:
+        # Revenue system status
+        revenue_status = {
+            "system_available": True,
+            "tracking_enabled": True,
+            "last_update": datetime.utcnow().isoformat(),
+            "currency": "USD"
+        }
+        
+        # Subscription metrics (mock data structure)
+        subscription_metrics = {
+            "total_subscriptions": 0,
+            "active_subscriptions": 0,
+            "subscription_tiers": {
+                "basic": 0,
+                "professional": 0,
+                "enterprise": 0
+            },
+            "revenue_metrics": {
+                "monthly_recurring_revenue": 0.0,
+                "annual_recurring_revenue": 0.0,
+                "average_revenue_per_user": 0.0
+            }
+        }
+        
+        # Content generation statistics
+        content_stats = {
+            "total_content_generated": 0,
+            "content_by_platform": {
+                "instagram": 0,
+                "linkedin": 0,
+                "tiktok": 0,
+                "youtube": 0,
+                "twitter": 0
+            },
+            "content_by_type": {
+                "posts": 0,
+                "stories": 0,
+                "videos": 0,
+                "carousels": 0
+            },
+            "viral_content_count": 0,
+            "average_engagement_rate": 0.0
+        }
+        
+        # User activity metrics
+        user_activity = {
+            "total_users": 0,
+            "active_users_30d": 0,
+            "new_users_30d": 0,
+            "user_retention_rate": 0.0,
+            "average_session_duration": 0,
+            "feature_usage": {
+                "content_analysis": 0,
+                "persona_generation": 0,
+                "viral_content": 0,
+                "publishing": 0,
+                "analytics": 0
+            }
+        }
+        
+        # Platform integration status
+        platform_status = {
+            "instagram": {"connected": False, "status": "not_configured"},
+            "linkedin": {"connected": False, "status": "not_configured"},
+            "tiktok": {"connected": False, "status": "not_configured"},
+            "youtube": {"connected": False, "status": "not_configured"},
+            "twitter": {"connected": False, "status": "not_configured"},
+            "facebook": {"connected": False, "status": "not_configured"}
+        }
+        
+        # Business intelligence status
+        bi_status = {
+            "analytics_engine": "available",
+            "performance_monitoring": "available", 
+            "revenue_tracking": "available",
+            "pricing_optimization": "available",
+            "real_time_monitoring": "available"
+        }
+        
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "business-raw",
+            "status": "success",
+            "data": {
+                "revenue_status": revenue_status,
+                "subscription_metrics": subscription_metrics,
+                "content_stats": content_stats,
+                "user_activity": user_activity,
+                "platform_status": platform_status,
+                "bi_status": bi_status
+            },
+            "errors": []
+        }
+        
+    except Exception as e:
+        logger.error(f"Business debug endpoint failed: {e}")
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "business-raw",
+            "status": "error",
+            "data": {},
+            "errors": [str(e)]
+        }
+
+
+@app.get("/api/debug/all-raw", tags=["Debug"])
+async def get_all_raw_data():
+    """
+    Get all raw debug data in a single request.
+    
+    Returns comprehensive debugging information from all endpoints:
+    database, system, application, and business metrics combined.
+    """
+    try:
+        # Import the individual debug functions
+        from backend.database.connection import create_db_engine
+        
+        # Collect data from all endpoints
+        database_data = await get_database_raw_data()
+        system_data = await get_system_raw_data()
+        application_data = await get_application_raw_data()
+        business_data = await get_business_raw_data()
+        
+        # Combine all data
+        combined_data = {
+            "database": database_data["data"],
+            "system": system_data["data"],
+            "application": application_data["data"],
+            "business": business_data["data"]
+        }
+        
+        # Collect any errors from individual endpoints
+        all_errors = []
+        for endpoint_data in [database_data, system_data, application_data, business_data]:
+            if endpoint_data.get("errors"):
+                all_errors.extend(endpoint_data["errors"])
+        
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "all-raw",
+            "status": "success" if not all_errors else "partial_success",
+            "data": combined_data,
+            "errors": all_errors
+        }
+        
+    except Exception as e:
+        logger.error(f"All-raw debug endpoint failed: {e}")
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "endpoint": "all-raw",
+            "status": "error",
+            "data": {},
+            "errors": [str(e)]
+        }
+
+
 @app.post(
     "/api/v1/analyze",
     response_model=ContentAnalysis,

@@ -16,7 +16,7 @@ from .base_intelligence import (
     IntelligenceInsight,
     IntelligenceEngineError
 )
-from ..database.connection import get_db_connection
+from ..database.connection import get_db_context
 from ..models.content_models import ContentAnalysis, PlatformContent, ContentMetadata
 
 logger = logging.getLogger(__name__)
@@ -57,81 +57,79 @@ class UsageTracker:
     
     def __init__(self, client_id: str):
         self.client_id = client_id
-        self.db = get_db_connection()
         
     async def get_platform_stats(self, platform: str, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """Get comprehensive platform usage statistics"""
         try:
-            # Query content data for the platform
-            content_query = select(ContentAnalysis).where(
-                and_(
-                    ContentAnalysis.client_id == self.client_id,
-                    ContentAnalysis.platform == platform,
-                    ContentAnalysis.created_at >= start_date,
-                    ContentAnalysis.created_at <= end_date
+            async with get_db_context() as db:
+                # Query content data for the platform
+                content_query = select(ContentAnalysis).where(
+                    and_(
+                        ContentAnalysis.client_id == self.client_id,
+                        ContentAnalysis.platform == platform,
+                        ContentAnalysis.created_at >= start_date,
+                        ContentAnalysis.created_at <= end_date
+                    )
                 )
-            )
-            
-            contents = await self.db.fetch_all(content_query)
-            
-            # Calculate platform statistics
-            total_posts = len(contents)
-            successful_posts = sum(1 for c in contents if c.get('status') == 'published')
-            failed_posts = sum(1 for c in contents if c.get('status') == 'failed')
-            
-            # Get engagement data
-            engagement_query = select(PlatformContent).where(
-                and_(
-                    PlatformContent.client_id == self.client_id,
-                    PlatformContent.platform == platform,
-                    PlatformContent.recorded_at >= start_date,
-                    PlatformContent.recorded_at <= end_date
+                contents = await db.fetch_all(content_query)
+                
+                # Calculate platform statistics
+                total_posts = len(contents)
+                successful_posts = sum(1 for c in contents if c.get('status') == 'published')
+                failed_posts = sum(1 for c in contents if c.get('status') == 'failed')
+                
+                # Get engagement data
+                engagement_query = select(PlatformContent).where(
+                    and_(
+                        PlatformContent.client_id == self.client_id,
+                        PlatformContent.platform == platform,
+                        PlatformContent.recorded_at >= start_date,
+                        PlatformContent.recorded_at <= end_date
+                    )
                 )
-            )
-            
-            engagements = await self.db.fetch_all(engagement_query)
-            
-            # Calculate engagement metrics
-            total_engagement = sum(e.get('total_engagement', 0) for e in engagements)
-            total_reach = sum(e.get('reach', 0) for e in engagements)
-            revenue_generated = sum(e.get('attributed_revenue', 0) for e in engagements)
-            
-            # Calculate time spent optimizing
-            optimization_time = sum(c.get('optimization_time_seconds', 0) for c in contents) / 60
-            
-            # Calculate automation savings
-            manual_time_estimate = total_posts * 30  # 30 minutes per post manual
-            automation_savings = (manual_time_estimate - optimization_time) / 60
-            
-            # Analyze peak usage hours
-            posting_hours = [c.get('created_at').hour for c in contents if c.get('created_at')]
-            hour_counter = Counter(posting_hours)
-            peak_hours = [hour for hour, count in hour_counter.most_common(3)]
-            
-            # Content type breakdown
-            content_types = [c.get('content_type', 'unknown') for c in contents]
-            content_type_breakdown = dict(Counter(content_types))
-            
-            # Business niche performance
-            niche_revenue = defaultdict(float)
-            for engagement in engagements:
-                niche = engagement.get('business_niche', 'unknown')
-                niche_revenue[niche] += engagement.get('attributed_revenue', 0)
-            
-            return {
-                'total_posts': total_posts,
-                'successful_posts': successful_posts,
-                'failed_posts': failed_posts,
-                'success_rate': (successful_posts / total_posts * 100) if total_posts > 0 else 0,
-                'average_engagement': (total_engagement / total_posts) if total_posts > 0 else 0,
-                'total_reach': total_reach,
-                'revenue_generated': revenue_generated,
-                'optimization_time': optimization_time,
-                'automation_savings': automation_savings,
-                'peak_usage_hours': peak_hours,
-                'content_type_breakdown': content_type_breakdown,
-                'business_niche_performance': dict(niche_revenue)
-            }
+                engagements = await db.fetch_all(engagement_query)
+                
+                # Calculate engagement metrics
+                total_engagement = sum(e.get('total_engagement', 0) for e in engagements)
+                total_reach = sum(e.get('reach', 0) for e in engagements)
+                revenue_generated = sum(e.get('attributed_revenue', 0) for e in engagements)
+                
+                # Calculate time spent optimizing
+                optimization_time = sum(c.get('optimization_time_seconds', 0) for c in contents) / 60
+                
+                # Calculate automation savings
+                manual_time_estimate = total_posts * 30  # 30 minutes per post manual
+                automation_savings = (manual_time_estimate - optimization_time) / 60
+                
+                # Analyze peak usage hours
+                posting_hours = [c.get('created_at').hour for c in contents if c.get('created_at')]
+                hour_counter = Counter(posting_hours)
+                peak_hours = [hour for hour, count in hour_counter.most_common(3)]
+                
+                # Content type breakdown
+                content_types = [c.get('content_type', 'unknown') for c in contents]
+                content_type_breakdown = dict(Counter(content_types))
+                
+                # Business niche performance
+                niche_revenue = defaultdict(float)
+                for engagement in engagements:
+                    niche = engagement.get('business_niche', 'unknown')
+                    niche_revenue[niche] += engagement.get('attributed_revenue', 0)
+                
+                return {
+                    'total_posts': total_posts,
+                    'successful_posts': successful_posts,
+                    'failed_posts': failed_posts,
+                    'success_rate': (successful_posts / total_posts * 100) if total_posts > 0 else 0,
+                    'average_engagement': (total_engagement / total_posts) if total_posts > 0 else 0,
+                    'total_reach': total_reach,
+                    'revenue_generated': revenue_generated,
+                    'optimization_time': optimization_time,
+                    'automation_savings': automation_savings,
+                    'peak_usage_hours': peak_hours,
+                    'content_type_breakdown': content_type_breakdown,
+                    'business_niche_performance': dict(niche_revenue)
+                }
             
         except Exception as e:
             logger.error(f"Error getting platform stats: {str(e)}")
@@ -140,111 +138,112 @@ class UsageTracker:
     async def get_feature_stats(self, feature: str, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """Get comprehensive feature usage statistics"""
         try:
-            # Query feature usage data
-            feature_usage_query = f"""
-                SELECT 
-                    COUNT(*) as usage_count,
-                    COUNT(DISTINCT user_id) as unique_users,
-                    AVG(session_duration_seconds) / 60 as avg_session_duration,
-                    AVG(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) as success_rate,
-                    AVG(satisfaction_score) as satisfaction_score
-                FROM feature_usage_logs
-                WHERE client_id = :client_id
-                    AND feature_name = :feature
-                    AND timestamp >= :start_date
-                    AND timestamp <= :end_date
-            """
-            
-            result = await self.db.fetch_one(
-                feature_usage_query,
-                {
-                    'client_id': self.client_id,
-                    'feature': feature,
-                    'start_date': start_date,
-                    'end_date': end_date
+            async with get_db_context() as db:
+                # Query feature usage data
+                feature_usage_query = f"""
+                    SELECT 
+                        COUNT(*) as usage_count,
+                        COUNT(DISTINCT user_id) as unique_users,
+                        AVG(session_duration_seconds) / 60 as avg_session_duration,
+                        AVG(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) as success_rate,
+                        AVG(satisfaction_score) as satisfaction_score
+                    FROM feature_usage_logs
+                    WHERE client_id = :client_id
+                        AND feature_name = :feature
+                        AND timestamp >= :start_date
+                        AND timestamp <= :end_date
+                """
+                
+                result = await db.fetch_one(
+                    feature_usage_query,
+                    {
+                        'client_id': self.client_id,
+                        'feature': feature,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                # Calculate feature adoption rate
+                total_users_query = """
+                    SELECT COUNT(DISTINCT user_id) as total_users
+                    FROM user_activities
+                    WHERE client_id = :client_id
+                        AND timestamp >= :start_date
+                        AND timestamp <= :end_date
+                """
+                
+                total_users_result = await db.fetch_one(
+                    total_users_query,
+                    {
+                        'client_id': self.client_id,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                total_users = total_users_result.get('total_users', 1) if total_users_result else 1
+                unique_feature_users = result.get('unique_users', 0) if result else 0
+                adoption_rate = (unique_feature_users / total_users * 100) if total_users > 0 else 0
+                
+                # Get common use cases
+                use_cases_query = """
+                    SELECT use_case, COUNT(*) as count
+                    FROM feature_usage_logs
+                    WHERE client_id = :client_id
+                        AND feature_name = :feature
+                        AND timestamp >= :start_date
+                        AND timestamp <= :end_date
+                    GROUP BY use_case
+                    ORDER BY count DESC
+                    LIMIT 5
+                """
+                
+                use_cases = await db.fetch_all(
+                    use_cases_query,
+                    {
+                        'client_id': self.client_id,
+                        'feature': feature,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                common_use_cases = [uc.get('use_case') for uc in use_cases if uc.get('use_case')]
+                
+                # Get business niche usage
+                niche_usage_query = """
+                    SELECT business_niche, COUNT(*) as usage_count
+                    FROM feature_usage_logs
+                    WHERE client_id = :client_id
+                        AND feature_name = :feature
+                        AND timestamp >= :start_date
+                        AND timestamp <= :end_date
+                    GROUP BY business_niche
+                """
+                
+                niche_usage = await db.fetch_all(
+                    niche_usage_query,
+                    {
+                        'client_id': self.client_id,
+                        'feature': feature,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                business_niche_usage = {nu.get('business_niche'): nu.get('usage_count', 0) for nu in niche_usage}
+                
+                return {
+                    'usage_count': result.get('usage_count', 0) if result else 0,
+                    'unique_users': unique_feature_users,
+                    'avg_session_duration': result.get('avg_session_duration', 0) if result else 0,
+                    'success_rate': result.get('success_rate', 0) if result else 0,
+                    'satisfaction_score': result.get('satisfaction_score', 0) if result else 0,
+                    'adoption_rate': adoption_rate,
+                    'common_use_cases': common_use_cases,
+                    'business_niche_usage': business_niche_usage
                 }
-            )
-            
-            # Calculate feature adoption rate
-            total_users_query = """
-                SELECT COUNT(DISTINCT user_id) as total_users
-                FROM user_activities
-                WHERE client_id = :client_id
-                    AND timestamp >= :start_date
-                    AND timestamp <= :end_date
-            """
-            
-            total_users_result = await self.db.fetch_one(
-                total_users_query,
-                {
-                    'client_id': self.client_id,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            total_users = total_users_result.get('total_users', 1) if total_users_result else 1
-            unique_feature_users = result.get('unique_users', 0) if result else 0
-            adoption_rate = (unique_feature_users / total_users * 100) if total_users > 0 else 0
-            
-            # Get common use cases
-            use_cases_query = """
-                SELECT use_case, COUNT(*) as count
-                FROM feature_usage_logs
-                WHERE client_id = :client_id
-                    AND feature_name = :feature
-                    AND timestamp >= :start_date
-                    AND timestamp <= :end_date
-                GROUP BY use_case
-                ORDER BY count DESC
-                LIMIT 5
-            """
-            
-            use_cases = await self.db.fetch_all(
-                use_cases_query,
-                {
-                    'client_id': self.client_id,
-                    'feature': feature,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            common_use_cases = [uc.get('use_case') for uc in use_cases if uc.get('use_case')]
-            
-            # Get business niche usage
-            niche_usage_query = """
-                SELECT business_niche, COUNT(*) as usage_count
-                FROM feature_usage_logs
-                WHERE client_id = :client_id
-                    AND feature_name = :feature
-                    AND timestamp >= :start_date
-                    AND timestamp <= :end_date
-                GROUP BY business_niche
-            """
-            
-            niche_usage = await self.db.fetch_all(
-                niche_usage_query,
-                {
-                    'client_id': self.client_id,
-                    'feature': feature,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            business_niche_usage = {nu.get('business_niche'): nu.get('usage_count', 0) for nu in niche_usage}
-            
-            return {
-                'usage_count': result.get('usage_count', 0) if result else 0,
-                'unique_users': unique_feature_users,
-                'avg_session_duration': result.get('avg_session_duration', 0) if result else 0,
-                'success_rate': result.get('success_rate', 0) if result else 0,
-                'satisfaction_score': result.get('satisfaction_score', 0) if result else 0,
-                'adoption_rate': adoption_rate,
-                'common_use_cases': common_use_cases,
-                'business_niche_usage': business_niche_usage
-            }
             
         except Exception as e:
             logger.error(f"Error getting feature stats: {str(e)}")
@@ -439,38 +438,37 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def collect_content_generation_data(self, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """Collect content generation statistics"""
         try:
-            db = get_db_connection()
-            
-            # Query content generation metrics
-            content_query = f"""
-                SELECT 
-                    COUNT(*) as total_content_generated,
-                    AVG(generation_time_seconds) as avg_generation_time,
-                    COUNT(DISTINCT content_type) as content_type_variety,
-                    SUM(CASE WHEN ai_generated = true THEN 1 ELSE 0 END) as ai_generated_count,
-                    AVG(quality_score) as avg_quality_score
-                FROM content
-                WHERE client_id = :client_id
-                    AND created_at >= :start_date
-                    AND created_at <= :end_date
-            """
-            
-            result = await db.fetch_one(
-                content_query,
-                {
-                    'client_id': self.client_id,
-                    'start_date': start_date,
-                    'end_date': end_date
+            async with get_db_context() as db:
+                # Query content generation metrics
+                content_query = f"""
+                    SELECT 
+                        COUNT(*) as total_content_generated,
+                        AVG(generation_time_seconds) as avg_generation_time,
+                        COUNT(DISTINCT content_type) as content_type_variety,
+                        SUM(CASE WHEN ai_generated = true THEN 1 ELSE 0 END) as ai_generated_count,
+                        AVG(quality_score) as avg_quality_score
+                    FROM content
+                    WHERE client_id = :client_id
+                        AND created_at >= :start_date
+                        AND created_at <= :end_date
+                """
+                
+                result = await db.fetch_one(
+                    content_query,
+                    {
+                        'client_id': self.client_id,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                return {
+                    'total_content_generated': result.get('total_content_generated', 0) if result else 0,
+                    'average_generation_time_seconds': result.get('avg_generation_time', 0) if result else 0,
+                    'content_type_variety': result.get('content_type_variety', 0) if result else 0,
+                    'ai_generated_percentage': (result.get('ai_generated_count', 0) / max(result.get('total_content_generated', 1), 1) * 100) if result else 0,
+                    'average_quality_score': result.get('avg_quality_score', 0) if result else 0
                 }
-            )
-            
-            return {
-                'total_content_generated': result.get('total_content_generated', 0) if result else 0,
-                'average_generation_time_seconds': result.get('avg_generation_time', 0) if result else 0,
-                'content_type_variety': result.get('content_type_variety', 0) if result else 0,
-                'ai_generated_percentage': (result.get('ai_generated_count', 0) / max(result.get('total_content_generated', 1), 1) * 100) if result else 0,
-                'average_quality_score': result.get('avg_quality_score', 0) if result else 0
-            }
             
         except Exception as e:
             logger.error(f"Error collecting content generation data: {str(e)}")
@@ -479,40 +477,39 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def collect_user_behavior_data(self, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """Collect user behavior analytics"""
         try:
-            db = get_db_connection()
-            
-            # Query user behavior metrics
-            behavior_query = f"""
-                SELECT 
-                    COUNT(DISTINCT session_id) as total_sessions,
-                    AVG(session_duration_seconds) / 60 as avg_session_duration_minutes,
-                    COUNT(DISTINCT user_action) as action_variety,
-                    AVG(actions_per_session) as avg_actions_per_session
-                FROM user_sessions
-                WHERE client_id = :client_id
-                    AND session_start >= :start_date
-                    AND session_start <= :end_date
-            """
-            
-            result = await db.fetch_one(
-                behavior_query,
-                {
-                    'client_id': self.client_id,
-                    'start_date': start_date,
-                    'end_date': end_date
+            async with get_db_context() as db:
+                # Query user behavior metrics
+                behavior_query = f"""
+                    SELECT 
+                        COUNT(DISTINCT session_id) as total_sessions,
+                        AVG(session_duration_seconds) / 60 as avg_session_duration_minutes,
+                        COUNT(DISTINCT user_action) as action_variety,
+                        AVG(actions_per_session) as avg_actions_per_session
+                    FROM user_sessions
+                    WHERE client_id = :client_id
+                        AND session_start >= :start_date
+                        AND session_start <= :end_date
+                """
+                
+                result = await db.fetch_one(
+                    behavior_query,
+                    {
+                        'client_id': self.client_id,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                # Get user journey patterns
+                journey_patterns = await self.analyze_user_journey_patterns(start_date, end_date)
+                
+                return {
+                    'total_sessions': result.get('total_sessions', 0) if result else 0,
+                    'average_session_duration_minutes': result.get('avg_session_duration_minutes', 0) if result else 0,
+                    'action_variety': result.get('action_variety', 0) if result else 0,
+                    'average_actions_per_session': result.get('avg_actions_per_session', 0) if result else 0,
+                    'user_journey_patterns': journey_patterns
                 }
-            )
-            
-            # Get user journey patterns
-            journey_patterns = await self.analyze_user_journey_patterns(start_date, end_date)
-            
-            return {
-                'total_sessions': result.get('total_sessions', 0) if result else 0,
-                'average_session_duration_minutes': result.get('avg_session_duration_minutes', 0) if result else 0,
-                'action_variety': result.get('action_variety', 0) if result else 0,
-                'average_actions_per_session': result.get('avg_actions_per_session', 0) if result else 0,
-                'user_journey_patterns': journey_patterns
-            }
             
         except Exception as e:
             logger.error(f"Error collecting user behavior data: {str(e)}")
@@ -827,30 +824,30 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def get_peak_usage_hours(self, platform: str, start_date: datetime, end_date: datetime) -> List[int]:
         """Get peak usage hours for a platform"""
         try:
-            db = get_db_connection()
-            query = """
-                SELECT EXTRACT(HOUR FROM created_at) as hour, COUNT(*) as count
-                FROM content
-                WHERE client_id = :client_id
-                    AND platform = :platform
-                    AND created_at >= :start_date
-                    AND created_at <= :end_date
-                GROUP BY hour
-                ORDER BY count DESC
-                LIMIT 3
-            """
-            
-            results = await db.fetch_all(
-                query,
-                {
-                    'client_id': self.client_id,
-                    'platform': platform,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            return [int(r['hour']) for r in results]
+            async with get_db_context() as db:
+                query = """
+                    SELECT EXTRACT(HOUR FROM created_at) as hour, COUNT(*) as count
+                    FROM content
+                    WHERE client_id = :client_id
+                        AND platform = :platform
+                        AND created_at >= :start_date
+                        AND created_at <= :end_date
+                    GROUP BY hour
+                    ORDER BY count DESC
+                    LIMIT 3
+                """
+                
+                results = await db.fetch_all(
+                    query,
+                    {
+                        'client_id': self.client_id,
+                        'platform': platform,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                return [int(r['hour']) for r in results]
             
         except Exception as e:
             logger.error(f"Error getting peak usage hours: {str(e)}")
@@ -859,28 +856,28 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def get_content_type_breakdown(self, platform: str, start_date: datetime, end_date: datetime) -> Dict[str, int]:
         """Get content type breakdown for a platform"""
         try:
-            db = get_db_connection()
-            query = """
-                SELECT content_type, COUNT(*) as count
-                FROM content
-                WHERE client_id = :client_id
-                    AND platform = :platform
-                    AND created_at >= :start_date
-                    AND created_at <= :end_date
-                GROUP BY content_type
-            """
-            
-            results = await db.fetch_all(
-                query,
-                {
-                    'client_id': self.client_id,
-                    'platform': platform,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            return {r['content_type']: r['count'] for r in results}
+            async with get_db_context() as db:
+                query = """
+                    SELECT content_type, COUNT(*) as count
+                    FROM content
+                    WHERE client_id = :client_id
+                        AND platform = :platform
+                        AND created_at >= :start_date
+                        AND created_at <= :end_date
+                    GROUP BY content_type
+                """
+                
+                results = await db.fetch_all(
+                    query,
+                    {
+                        'client_id': self.client_id,
+                        'platform': platform,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                return {r['content_type']: r['count'] for r in results}
             
         except Exception as e:
             logger.error(f"Error getting content type breakdown: {str(e)}")
@@ -889,28 +886,28 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def get_niche_performance(self, platform: str, start_date: datetime, end_date: datetime) -> Dict[str, float]:
         """Get business niche performance for a platform"""
         try:
-            db = get_db_connection()
-            query = """
-                SELECT business_niche, SUM(attributed_revenue) as total_revenue
-                FROM content_engagement
-                WHERE client_id = :client_id
-                    AND platform = :platform
-                    AND recorded_at >= :start_date
-                    AND recorded_at <= :end_date
-                GROUP BY business_niche
-            """
-            
-            results = await db.fetch_all(
-                query,
-                {
-                    'client_id': self.client_id,
-                    'platform': platform,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            return {r['business_niche']: float(r['total_revenue']) for r in results}
+            async with get_db_context() as db:
+                query = """
+                    SELECT business_niche, SUM(attributed_revenue) as total_revenue
+                    FROM content_engagement
+                    WHERE client_id = :client_id
+                        AND platform = :platform
+                        AND recorded_at >= :start_date
+                        AND recorded_at <= :end_date
+                    GROUP BY business_niche
+                """
+                
+                results = await db.fetch_all(
+                    query,
+                    {
+                        'client_id': self.client_id,
+                        'platform': platform,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                return {r['business_niche']: float(r['total_revenue']) for r in results}
             
         except Exception as e:
             logger.error(f"Error getting niche performance: {str(e)}")
@@ -940,25 +937,25 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def count_total_sessions(self, start_date: datetime, end_date: datetime) -> int:
         """Count total user sessions"""
         try:
-            db = get_db_connection()
-            query = """
-                SELECT COUNT(DISTINCT session_id) as total_sessions
-                FROM user_sessions
-                WHERE client_id = :client_id
-                    AND session_start >= :start_date
-                    AND session_start <= :end_date
-            """
-            
-            result = await db.fetch_one(
-                query,
-                {
-                    'client_id': self.client_id,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            return result.get('total_sessions', 0) if result else 0
+            async with get_db_context() as db:
+                query = """
+                    SELECT COUNT(DISTINCT session_id) as total_sessions
+                    FROM user_sessions
+                    WHERE client_id = :client_id
+                        AND session_start >= :start_date
+                        AND session_start <= :end_date
+                """
+                
+                result = await db.fetch_one(
+                    query,
+                    {
+                        'client_id': self.client_id,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                return result.get('total_sessions', 0) if result else 0
             
         except Exception as e:
             logger.error(f"Error counting total sessions: {str(e)}")
@@ -967,25 +964,25 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def count_unique_features_used(self, start_date: datetime, end_date: datetime) -> int:
         """Count unique features used"""
         try:
-            db = get_db_connection()
-            query = """
-                SELECT COUNT(DISTINCT feature_name) as unique_features
-                FROM feature_usage_logs
-                WHERE client_id = :client_id
-                    AND timestamp >= :start_date
-                    AND timestamp <= :end_date
-            """
-            
-            result = await db.fetch_one(
-                query,
-                {
-                    'client_id': self.client_id,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            return result.get('unique_features', 0) if result else 0
+            async with get_db_context() as db:
+                query = """
+                    SELECT COUNT(DISTINCT feature_name) as unique_features
+                    FROM feature_usage_logs
+                    WHERE client_id = :client_id
+                        AND timestamp >= :start_date
+                        AND timestamp <= :end_date
+                """
+                
+                result = await db.fetch_one(
+                    query,
+                    {
+                        'client_id': self.client_id,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                return result.get('unique_features', 0) if result else 0
             
         except Exception as e:
             logger.error(f"Error counting unique features: {str(e)}")
@@ -994,32 +991,32 @@ class UsageAnalyticsEngine(UniversalIntelligenceEngine):
     async def calculate_automation_efficiency(self, start_date: datetime, end_date: datetime) -> float:
         """Calculate overall automation efficiency"""
         try:
-            db = get_db_connection()
-            query = """
-                SELECT 
-                    SUM(automated_time_saved_seconds) as time_saved,
-                    SUM(total_task_time_seconds) as total_time
-                FROM automation_metrics
-                WHERE client_id = :client_id
-                    AND timestamp >= :start_date
-                    AND timestamp <= :end_date
-            """
-            
-            result = await db.fetch_one(
-                query,
-                {
-                    'client_id': self.client_id,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-            )
-            
-            if result:
-                time_saved = result.get('time_saved', 0)
-                total_time = result.get('total_time', 1)
-                return (time_saved / total_time * 100) if total_time > 0 else 0
-            
-            return 0.0
+            async with get_db_context() as db:
+                query = """
+                    SELECT 
+                        SUM(automated_time_saved_seconds) as time_saved,
+                        SUM(total_task_time_seconds) as total_time
+                    FROM automation_metrics
+                    WHERE client_id = :client_id
+                        AND timestamp >= :start_date
+                        AND timestamp <= :end_date
+                """
+                
+                result = await db.fetch_one(
+                    query,
+                    {
+                        'client_id': self.client_id,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                )
+                
+                if result:
+                    time_saved = result.get('time_saved', 0)
+                    total_time = result.get('total_time', 1)
+                    return (time_saved / total_time * 100) if total_time > 0 else 0
+                
+                return 0.0
             
         except Exception as e:
             logger.error(f"Error calculating automation efficiency: {str(e)}")
