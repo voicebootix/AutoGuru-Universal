@@ -11,9 +11,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
+import tempfile
+import os
 
 import tweepy
-from tweepy import API, OAuth1UserHandler, StreamingClient
+from tweepy import API, OAuth1UserHandler, StreamingClient, Client
 import aiohttp
 
 from backend.platforms.enhanced_base_publisher import (
@@ -382,47 +384,372 @@ class TwitterAnalyticsTracker:
         return False
 
 
+class TwitterAPIv2:
+    """Complete Twitter API v2 integration with advanced features"""
+    
+    def __init__(self, bearer_token: str, api_key: Optional[str] = None, api_secret: Optional[str] = None, 
+                 access_token: Optional[str] = None, access_token_secret: Optional[str] = None):
+        self.bearer_token = bearer_token
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.access_token = access_token
+        self.access_token_secret = access_token_secret
+        
+        # Initialize Twitter API v2 client
+        self.client = Client(
+            bearer_token=bearer_token,
+            consumer_key=api_key,
+            consumer_secret=api_secret,
+            access_token=access_token,
+            access_token_secret=access_token_secret,
+            wait_on_rate_limit=True
+        )
+        
+        self.session = None
+    
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create aiohttp session"""
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
+        return self.session
+    
+    async def close_session(self):
+        """Close the aiohttp session"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+    
+    async def post_tweet(self, text: str, media_ids: Optional[List[str]] = None, reply_to: Optional[str] = None) -> Dict[str, Any]:
+        """Post a tweet using Twitter API v2"""
+        try:
+            tweet_data = {
+                'text': text
+            }
+            
+            if media_ids:
+                tweet_data['media'] = {'media_ids': media_ids}
+            
+            if reply_to:
+                tweet_data['reply'] = {'in_reply_to_tweet_id': reply_to}
+            
+            response = self.client.create_tweet(**tweet_data)
+            
+            if response.data:
+                return {
+                    'success': True,
+                    'tweet_id': response.data['id'],
+                    'text': response.data['text']
+                }
+            else:
+                return {'success': False, 'error': 'Failed to create tweet'}
+                
+        except Exception as e:
+            logger.error(f"Tweet posting failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def post_thread(self, tweets: List[str], media_ids: Optional[List[List[str]]] = None) -> Dict[str, Any]:
+        """Post a Twitter thread using API v2"""
+        try:
+            thread_results = []
+            previous_tweet_id = None
+            
+            for i, tweet_text in enumerate(tweets):
+                # Get media IDs for this tweet if available
+                tweet_media = media_ids[i] if media_ids and i < len(media_ids) else None
+                
+                # Post the tweet
+                result = await self.post_tweet(
+                    text=tweet_text,
+                    media_ids=tweet_media,
+                    reply_to=previous_tweet_id
+                )
+                
+                if result.get('success'):
+                    tweet_id = result['tweet_id']
+                    thread_results.append({
+                        'tweet_id': tweet_id,
+                        'text': tweet_text,
+                        'position': i + 1
+                    })
+                    previous_tweet_id = tweet_id
+                else:
+                    logger.error(f"Failed to post tweet {i + 1} in thread: {result.get('error')}")
+                    break
+                
+                # Small delay between tweets to avoid rate limiting
+                await asyncio.sleep(1)
+            
+            return {
+                'success': len(thread_results) > 0,
+                'thread_results': thread_results,
+                'thread_url': f"https://twitter.com/user/status/{thread_results[0]['tweet_id']}" if thread_results else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Thread posting failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def upload_media(self, media_path: str, media_type: Optional[str] = None) -> Optional[str]:
+        """Upload media using Twitter API v1.1 (required for media upload)"""
+        try:
+            # Media upload requires API v1.1
+            auth = tweepy.OAuth1UserHandler(
+                self.api_key, self.api_secret,
+                self.access_token, self.access_token_secret
+            )
+            api_v1 = tweepy.API(auth)
+            
+            # Determine media category
+            if not media_type:
+                _, ext = os.path.splitext(media_path)
+                if ext.lower() in ['.mp4', '.mov', '.avi']:
+                    media_type = 'video'
+                elif ext.lower() in ['.gif']:
+                    media_type = 'gif'
+                else:
+                    media_type = 'image'
+            
+            # Upload media
+            if media_type == 'video':
+                media = api_v1.media_upload(
+                    filename=media_path,
+                    media_category='tweet_video'
+                )
+            elif media_type == 'gif':
+                media = api_v1.media_upload(
+                    filename=media_path,
+                    media_category='tweet_gif'
+                )
+            else:  # image
+                media = api_v1.media_upload(
+                    filename=media_path
+                )
+            
+            logger.info(f"Successfully uploaded media: {media.media_id}")
+            return str(media.media_id)
+            
+        except Exception as e:
+            logger.error(f"Media upload failed: {str(e)}")
+            return None
+    
+    async def get_tweet_analytics(self, tweet_id: str) -> Dict[str, Any]:
+        """Get tweet analytics using API v2"""
+        try:
+            tweet = self.client.get_tweet(
+                id=tweet_id,
+                tweet_fields=['public_metrics', 'created_at', 'context_annotations'],
+                expansions=['author_id']
+            )
+            
+            if tweet.data:
+                metrics = tweet.data.public_metrics
+                return {
+                    'tweet_id': tweet_id,
+                    'retweet_count': metrics.get('retweet_count', 0),
+                    'like_count': metrics.get('like_count', 0),
+                    'reply_count': metrics.get('reply_count', 0),
+                    'quote_count': metrics.get('quote_count', 0),
+                    'impression_count': metrics.get('impression_count', 0),
+                    'created_at': str(tweet.data.created_at),
+                    'total_engagements': (
+                        metrics.get('retweet_count', 0) +
+                        metrics.get('like_count', 0) +
+                        metrics.get('reply_count', 0) +
+                        metrics.get('quote_count', 0)
+                    )
+                }
+            else:
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Failed to get tweet analytics: {str(e)}")
+            return {}
+    
+    async def get_trending_hashtags(self, location_id: int = 1) -> List[str]:
+        """Get trending hashtags using API v2"""
+        try:
+            # Note: Trending topics are available in API v1.1
+            auth = tweepy.OAuth1UserHandler(
+                self.api_key, self.api_secret,
+                self.access_token, self.access_token_secret
+            )
+            api_v1 = tweepy.API(auth)
+            
+            trends = api_v1.get_place_trends(id=location_id)
+            
+            hashtags = []
+            for trend in trends[0]['trends']:
+                if trend['name'].startswith('#'):
+                    hashtags.append(trend['name'])
+            
+            return hashtags[:10]  # Return top 10 trending hashtags
+            
+        except Exception as e:
+            logger.error(f"Failed to get trending hashtags: {str(e)}")
+            return []
+    
+    async def search_tweets(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+        """Search tweets using API v2"""
+        try:
+            tweets = self.client.search_recent_tweets(
+                query=query,
+                max_results=max_results,
+                tweet_fields=['public_metrics', 'created_at', 'author_id'],
+                expansions=['author_id'],
+                user_fields=['username', 'verified']
+            )
+            
+            results = []
+            if tweets.data:
+                users = {u.id: u for u in tweets.includes.get('users', [])}
+                
+                for tweet in tweets.data:
+                    author = users.get(tweet.author_id)
+                    results.append({
+                        'tweet_id': tweet.id,
+                        'text': tweet.text,
+                        'author_username': author.username if author else None,
+                        'author_verified': author.verified if author else False,
+                        'created_at': str(tweet.created_at),
+                        'metrics': tweet.public_metrics
+                    })
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Tweet search failed: {str(e)}")
+            return []
+    
+    async def create_twitter_space(self, space_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a Twitter Space"""
+        try:
+            # Note: Spaces creation is limited in API v2
+            # This would require special permissions
+            
+            logger.info("Twitter Spaces creation requires special API access")
+            return {
+                'success': False,
+                'error': 'Spaces creation requires special API permissions'
+            }
+            
+        except Exception as e:
+            logger.error(f"Twitter Space creation failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_user_info(self) -> Dict[str, Any]:
+        """Get authenticated user information"""
+        try:
+            user = self.client.get_me(
+                user_fields=['public_metrics', 'verified', 'description', 'location']
+            )
+            
+            if user.data:
+                return {
+                    'user_id': user.data.id,
+                    'username': user.data.username,
+                    'display_name': user.data.name,
+                    'verified': user.data.verified,
+                    'description': user.data.description,
+                    'location': user.data.location,
+                    'followers_count': user.data.public_metrics.get('followers_count', 0),
+                    'following_count': user.data.public_metrics.get('following_count', 0),
+                    'tweet_count': user.data.public_metrics.get('tweet_count', 0),
+                    'listed_count': user.data.public_metrics.get('listed_count', 0)
+                }
+            else:
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Failed to get user info: {str(e)}")
+            return {}
+    
+    async def engage_with_tweet(self, tweet_id: str, action: str) -> bool:
+        """Engage with a tweet (like, retweet, etc.)"""
+        try:
+            if action == 'like':
+                response = self.client.like(tweet_id)
+            elif action == 'retweet':
+                response = self.client.retweet(tweet_id)
+            elif action == 'unlike':
+                response = self.client.unlike(tweet_id)
+            elif action == 'unretweet':
+                response = self.client.unretweet(tweet_id)
+            else:
+                logger.error(f"Unknown engagement action: {action}")
+                return False
+            
+            return response.data.get('liked', False) or response.data.get('retweeted', False)
+            
+        except Exception as e:
+            logger.error(f"Tweet engagement failed: {str(e)}")
+            return False
+    
+    async def schedule_tweet(self, text: str, scheduled_time: datetime, media_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Schedule a tweet (requires external scheduling service)"""
+        try:
+            # Note: Native tweet scheduling is not available in API v2
+            # This would require integration with external scheduling services
+            
+            logger.info("Tweet scheduling requires external service integration")
+            return {
+                'success': False,
+                'error': 'Tweet scheduling requires external service integration'
+            }
+            
+        except Exception as e:
+            logger.error(f"Tweet scheduling failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+
 class TwitterEnhancedPublisher(UniversalPlatformPublisher):
     """Twitter/X enhanced publisher with revenue optimization"""
     
     def __init__(self, client_id: str):
         super().__init__(client_id, "twitter")
-        self.twitter_api: Optional[API] = None
-        self.streaming_client: Optional[StreamingClient] = None
+        self.twitter_api: Optional[TwitterAPIv2] = None
         self.engagement_optimizer = TwitterEngagementOptimizer()
         self.analytics_tracker = TwitterAnalyticsTracker()
         self._authenticated = False
         self.account_data = {}
     
     async def authenticate(self, credentials: Dict[str, Any]) -> bool:
-        """Authenticate with Twitter API"""
+        """Authenticate with Twitter API v2"""
         try:
-            # OAuth 1.0a for Twitter API v1.1
-            auth = OAuth1UserHandler(
-                credentials['api_key'],
-                credentials['api_secret'],
-                credentials['access_token'],
-                credentials['access_token_secret']
+            # Twitter API v2 requires bearer token and OAuth credentials
+            bearer_token = credentials.get('bearer_token')
+            api_key = credentials.get('api_key')
+            api_secret = credentials.get('api_secret')
+            access_token = credentials.get('access_token')
+            access_token_secret = credentials.get('access_token_secret')
+            
+            if not all([bearer_token, api_key, api_secret, access_token, access_token_secret]):
+                logger.error("Missing required Twitter API credentials")
+                return False
+            
+            # Initialize Twitter API v2
+            self.twitter_api = TwitterAPIv2(
+                bearer_token=bearer_token,
+                api_key=api_key,
+                api_secret=api_secret,
+                access_token=access_token,
+                access_token_secret=access_token_secret
             )
             
-            self.twitter_api = API(auth, wait_on_rate_limit=True)
+            # Verify credentials by getting user info
+            user_info = await self.twitter_api.get_user_info()
             
-            # Verify credentials
-            user = self.twitter_api.verify_credentials()
-            self.account_data = {
-                'user_id': user.id_str,
-                'screen_name': user.screen_name,
-                'followers_count': user.followers_count,
-                'verified': user.verified,
-                'twitter_blue': getattr(user, 'blue_verified', False)
-            }
+            if not user_info:
+                logger.error("Failed to verify Twitter credentials")
+                return False
+            
+            self.account_data = user_info
             
             # Store encrypted credentials
             encrypted = self.encryption_manager.encrypt_credentials(credentials)
             await self._store_platform_credentials(encrypted)
             
             self._authenticated = True
-            logger.info(f"Successfully authenticated Twitter account: @{user.screen_name}")
+            logger.info(f"Successfully authenticated Twitter account: @{user_info.get('username')}")
             return True
             
         except Exception as e:
@@ -444,98 +771,109 @@ class TwitterEnhancedPublisher(UniversalPlatformPublisher):
             # Detect business niche
             business_niche = await self.detect_business_niche(content.get('text', ''))
             
-            # Optimize content
+            # Optimize content for revenue and engagement
             optimizations = await self.optimize_for_revenue(content)
             viral_opts = await self.engagement_optimizer.optimize_for_virality(
                 content, 
                 business_niche
             )
             
-            # Prepare thread if needed
-            thread_tweets = viral_opts['thread_structure']
+            # Prepare content for posting
+            if viral_opts.get('thread_structure') and len(viral_opts['thread_structure']) > 1:
+                # Post as thread
+                result = await self._post_thread(viral_opts['thread_structure'], content)
+            else:
+                # Post as single tweet
+                result = await self._post_single_tweet(content, viral_opts)
+            
+            if not result.get('success'):
+                return self.handle_publish_error("twitter", result.get('error', 'Unknown error'))
+            
+            # Track initial metrics
+            tweet_id = result.get('tweet_id') or result.get('thread_results', [{}])[0].get('tweet_id')
+            
+            if tweet_id:
+                await self._track_publish_metrics(
+                    tweet_id,
+                    content,
+                    optimizations
+                )
+            
+            # Generate URL
+            username = self.account_data.get('username', 'user')
+            url = result.get('thread_url') or f"https://twitter.com/{username}/status/{tweet_id}"
+            
+            return PublishResult(
+                platform="twitter",
+                status=PublishStatus.PUBLISHED,
+                post_id=tweet_id,
+                post_url=url,
+                metrics=result.get('analytics', {}),
+                timestamp=datetime.utcnow()
+            )
+            
+        except Exception as e:
+            logger.error(f"Twitter publish failed: {str(e)}")
+            return self.handle_publish_error("twitter", str(e))
+    
+    async def _post_single_tweet(self, content: Dict[str, Any], optimizations: Dict[str, Any]) -> Dict[str, Any]:
+        """Post a single tweet with media"""
+        try:
+            text = content.get('text', '')
+            
+            # Add optimized hashtags
+            if optimizations.get('hashtags'):
+                hashtags_text = ' '.join(optimizations['hashtags'][:5])  # Twitter limit
+                text += f"\n\n{hashtags_text}"
+            
+            # Add call-to-action
+            if optimizations.get('viral_cta'):
+                text += f"\n\n{optimizations['viral_cta']}"
+            
+            # Ensure tweet is within character limit
+            if len(text) > 280:
+                text = text[:277] + "..."
             
             # Upload media if present
             media_ids = []
             if content.get('media_url'):
-                media_id = await self._upload_media(content['media_url'])
+                media_id = await self.twitter_api.upload_media(content['media_url'])
                 if media_id:
                     media_ids.append(media_id)
             
-            # Publish thread
-            tweet_ids = []
-            previous_tweet_id = None
-            
-            for i, tweet_text in enumerate(thread_tweets):
-                # Add hashtags to last tweet
-                if i == len(thread_tweets) - 1:
-                    tweet_text += f"\n\n{' '.join(viral_opts['hashtags'])}"
-                    tweet_text += f"\n\n{viral_opts['viral_cta']}"
-                
-                # Publish tweet
-                tweet_params = {
-                    'status': tweet_text,
-                    'in_reply_to_status_id': previous_tweet_id
-                }
-                
-                # Add media to first tweet only
-                if i == 0 and media_ids:
-                    tweet_params['media_ids'] = media_ids
-                
-                tweet = self.twitter_api.update_status(**tweet_params)
-                tweet_ids.append(tweet.id_str)
-                previous_tweet_id = tweet.id_str
-                
-                # Small delay between tweets
-                await asyncio.sleep(1)
-            
-            # Track initial metrics
-            await self._track_publish_metrics(
-                tweet_ids[0],
-                content,
-                optimizations
+            # Post tweet
+            result = await self.twitter_api.post_tweet(
+                text=text,
+                media_ids=media_ids if media_ids else None
             )
             
-            # Generate URL
-            url = f"https://twitter.com/{self.account_data['screen_name']}/status/{tweet_ids[0]}"
-            
-            return PublishResult(
-                platform="twitter",
-                post_id=tweet_ids[0],
-                url=url,
-                status=PublishStatus.SUCCESS,
-                metadata={
-                    'thread_ids': tweet_ids,
-                    'thread_length': len(tweet_ids),
-                    'optimizations_applied': viral_opts,
-                    'business_niche': business_niche
-                }
-            )
+            return result
             
         except Exception as e:
-            logger.error(f"Failed to publish to Twitter: {e}")
-            return PublishResult(
-                platform="twitter",
-                post_id=None,
-                url=None,
-                status=PublishStatus.FAILED,
-                error_message=str(e)
-            )
+            logger.error(f"Single tweet posting failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
     
-    async def _upload_media(self, media_url: str) -> Optional[str]:
-        """Upload media to Twitter"""
+    async def _post_thread(self, thread_tweets: List[str], content: Dict[str, Any]) -> Dict[str, Any]:
+        """Post a Twitter thread"""
         try:
-            # Download media
-            async with aiohttp.ClientSession() as session:
-                async with session.get(media_url) as resp:
-                    media_data = await resp.read()
+            # Upload media if present (attach to first tweet)
+            media_ids = []
+            if content.get('media_url'):
+                media_id = await self.twitter_api.upload_media(content['media_url'])
+                if media_id:
+                    media_ids = [[media_id]]  # For first tweet only
             
-            # Upload to Twitter
-            media = self.twitter_api.media_upload(filename='media.jpg', file=media_data)
-            return media.media_id_string
+            # Post thread
+            result = await self.twitter_api.post_thread(
+                tweets=thread_tweets,
+                media_ids=media_ids if media_ids else None
+            )
+            
+            return result
             
         except Exception as e:
-            logger.error(f"Failed to upload media: {e}")
-            return None
+            logger.error(f"Thread posting failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
     
     async def optimize_for_revenue(self, content: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize content for Twitter revenue"""

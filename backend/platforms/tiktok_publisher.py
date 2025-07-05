@@ -14,6 +14,13 @@ import json
 from dataclasses import dataclass
 import re
 import random
+import aiohttp
+import hashlib
+import hmac
+import base64
+import os
+import tempfile
+from urllib.parse import urlencode, quote
 
 from backend.platforms.enhanced_base_publisher import (
     UniversalPlatformPublisher,
@@ -255,7 +262,11 @@ class TikTokEnhancedPublisher(UniversalPlatformPublisher):
                 return False
             
             # Initialize API client
-            self.tiktok_api = TikTokAPI(access_token)
+            self.tiktok_api = TikTokAPI(
+                access_token=access_token,
+                client_key=credentials.get('client_key', ''),
+                client_secret=credentials.get('client_secret', '')
+            )
             self.analytics_tracker = TikTokAnalyticsTracker(self.tiktok_api)
             
             # Verify token and get account info
@@ -498,21 +509,59 @@ class TikTokEnhancedPublisher(UniversalPlatformPublisher):
         )
     
     async def _publish_video(self, metadata: TikTokVideoMetadata) -> Dict[str, Any]:
-        """Publish video to TikTok"""
-        # In production, this would use TikTok API
-        return {
-            'video_id': f'tiktok_{datetime.utcnow().timestamp()}',
-            'status': 'published'
-        }
+        """Publish video to TikTok using the real API"""
+        try:
+            if not self.tiktok_api:
+                return {'error': 'TikTok API not initialized'}
+            
+            # Create video data for API
+            video_data = {
+                'video_file': metadata.video_file,
+                'description': metadata.description,
+                'privacy_level': metadata.privacy_level.upper(),
+                'allow_duet': metadata.allow_duet,
+                'allow_stitch': metadata.allow_stitch,
+                'allow_comments': metadata.allow_comments,
+                'music_id': metadata.music_id
+            }
+            
+            # Use the real TikTok API
+            result = await self.tiktok_api.upload_video(video_data)
+            
+            if result.get('error'):
+                return {'error': result['error']}
+            
+            return {
+                'video_id': result.get('video_id'),
+                'status': 'published',
+                'share_url': result.get('share_url')
+            }
+            
+        except Exception as e:
+            logger.error(f"TikTok video publishing failed: {str(e)}")
+            return {'error': str(e)}
     
     async def _get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get TikTok account information"""
-        # In production, fetch from TikTok API
-        return {
-            'account_id': 'sample_tiktok_account',
-            'username': 'sample_user',
-            'followers': 10000
-        }
+        """Get TikTok account information using the real API"""
+        try:
+            if not self.tiktok_api:
+                return None
+            
+            user_info = await self.tiktok_api.get_user_info()
+            
+            if user_info:
+                return {
+                    'account_id': user_info.get('open_id'),
+                    'username': user_info.get('display_name'),
+                    'followers': user_info.get('follower_count', 0),
+                    'verified': user_info.get('is_verified', False)
+                }
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get TikTok account info: {str(e)}")
+            return None
     
     def _extract_hashtags(self, text: str) -> List[str]:
         """Extract hashtags from text"""
@@ -827,16 +876,582 @@ class TikTokEnhancedPublisher(UniversalPlatformPublisher):
 
 
 class TikTokAPI:
-    """Simplified TikTok API client"""
+    """Complete TikTok API integration with OAuth 2.0 and video publishing"""
     
-    def __init__(self, access_token: str):
+    def __init__(self, access_token: str, client_key: Optional[str] = None, client_secret: Optional[str] = None):
         self.access_token = access_token
+        self.client_key = client_key
+        self.client_secret = client_secret
         self.base_url = "https://open-api.tiktok.com"
+        self.session = None
         
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create aiohttp session"""
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
+        return self.session
+    
+    async def close_session(self):
+        """Close the aiohttp session"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+    
+    def _generate_signature(self, params: Dict[str, Any], body: str = "") -> str:
+        """Generate signature for TikTok API request"""
+        if not self.client_secret:
+            return ""
+        
+        # Sort parameters
+        sorted_params = sorted(params.items())
+        param_string = urlencode(sorted_params)
+        
+        # Create signature string
+        signature_string = f"POST\n/share/video/upload/\n{param_string}\n{body}"
+        
+        # Generate HMAC-SHA256 signature
+        signature = hmac.new(
+            self.client_secret.encode(),
+            signature_string.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        return signature
+    
     async def upload_video(self, video_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Upload video to TikTok"""
-        # In production, implement actual API call
-        return {
-            'video_id': f'tiktok_{datetime.utcnow().timestamp()}',
-            'status': 'published'
+        """Upload video to TikTok using the Content Posting API"""
+        try:
+            session = await self._get_session()
+            
+            # Step 1: Initialize upload
+            init_response = await self._initialize_upload(video_data)
+            if not init_response.get('success'):
+                return {'error': 'Failed to initialize upload'}
+            
+            upload_url = init_response.get('upload_url')
+            upload_id = init_response.get('upload_id')
+            
+            # Step 2: Upload video file
+            if not upload_url:
+                return {'error': 'No upload URL provided'}
+            
+            upload_response = await self._upload_video_file(
+                upload_url,
+                video_data['video_file'],
+                session
+            )
+            
+            if not upload_response.get('success'):
+                return {'error': 'Failed to upload video file'}
+            
+            # Step 3: Create video post
+            if not upload_id:
+                return {'error': 'No upload ID provided'}
+            
+            post_response = await self._create_video_post(upload_id, video_data)
+            
+            if post_response.get('success'):
+                return {
+                    'video_id': post_response.get('video_id'),
+                    'status': 'published',
+                    'share_url': post_response.get('share_url')
+                }
+            else:
+                return {'error': 'Failed to create video post'}
+                
+        except Exception as e:
+            logger.error(f"TikTok video upload failed: {str(e)}")
+            return {'error': str(e)}
+    
+    async def _initialize_upload(self, video_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize video upload process"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/post/publish/video/init/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Get video file info
+            video_file = video_data.get('video_file')
+            if not video_file or not os.path.exists(video_file):
+                return {'success': False, 'error': 'Video file not found'}
+            
+            file_size = os.path.getsize(video_file)
+            
+            payload = {
+                'source_info': {
+                    'source': 'FILE_UPLOAD',
+                    'video_size': file_size,
+                    'chunk_size': 10 * 1024 * 1024,  # 10MB chunks
+                    'total_chunk_count': max(1, file_size // (10 * 1024 * 1024))
+                }
+            }
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        'success': True,
+                        'upload_url': result.get('data', {}).get('upload_url'),
+                        'upload_id': result.get('data', {}).get('publish_id')
+                    }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"TikTok upload initialization failed: {error_text}")
+                    return {'success': False, 'error': error_text}
+                    
+        except Exception as e:
+            logger.error(f"Upload initialization error: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def _upload_video_file(self, upload_url: str, video_file: Any, session: aiohttp.ClientSession) -> Dict[str, Any]:
+        """Upload video file to TikTok servers"""
+        try:
+            if not video_file:
+                return {'success': False, 'error': 'No video file provided'}
+                
+            with open(video_file, 'rb') as file:
+                file_data = file.read()
+            
+            headers = {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': str(len(file_data))
+            }
+            
+            async with session.put(upload_url, data=file_data, headers=headers) as response:
+                if response.status in [200, 201]:
+                    return {'success': True}
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Video file upload failed: {error_text}")
+                    return {'success': False, 'error': error_text}
+                    
+        except Exception as e:
+            logger.error(f"Video file upload error: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def _create_video_post(self, upload_id: str, video_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create the actual video post on TikTok"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/post/publish/video/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'post_info': {
+                    'title': video_data.get('description', ''),
+                    'privacy_level': video_data.get('privacy_level', 'PUBLIC_TO_EVERYONE'),
+                    'disable_duet': not video_data.get('allow_duet', True),
+                    'disable_stitch': not video_data.get('allow_stitch', True),
+                    'disable_comment': not video_data.get('allow_comments', True),
+                    'video_cover_timestamp_ms': 1000
+                },
+                'source_info': {
+                    'source': 'FILE_UPLOAD',
+                    'publish_id': upload_id
+                }
+            }
+            
+            # Add music if provided
+            if video_data.get('music_id'):
+                payload['post_info']['music_id'] = video_data['music_id']
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    data = result.get('data', {})
+                    return {
+                        'success': True,
+                        'video_id': data.get('publish_id'),
+                        'share_url': data.get('share_url')
+                    }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Video post creation failed: {error_text}")
+                    return {'success': False, 'error': error_text}
+                    
+        except Exception as e:
+            logger.error(f"Video post creation error: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_video_analytics(self, video_id: str) -> Dict[str, Any]:
+        """Get video analytics from TikTok"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/research/video/query/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'query': {
+                    'video_ids': [video_id]
+                },
+                'fields': [
+                    'id',
+                    'view_count',
+                    'like_count',
+                    'comment_count',
+                    'share_count',
+                    'play_duration',
+                    'create_time'
+                ]
+            }
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    videos = result.get('data', {}).get('videos', [])
+                    
+                    if videos:
+                        video = videos[0]
+                        return {
+                            'views': video.get('view_count', 0),
+                            'likes': video.get('like_count', 0),
+                            'comments': video.get('comment_count', 0),
+                            'shares': video.get('share_count', 0),
+                            'play_duration': video.get('play_duration', 0),
+                            'create_time': video.get('create_time', 0)
+                        }
+                    else:
+                        return {}
+                else:
+                    logger.error(f"Failed to get video analytics: {response.status}")
+                    return {}
+                    
+        except Exception as e:
+            logger.error(f"Video analytics error: {str(e)}")
+            return {}
+    
+    async def get_trending_sounds(self, business_niche: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get trending sounds from TikTok"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/research/music/popular/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'query': {
+                    'region_code': 'US',
+                    'period': 7,  # Last 7 days
+                    'count': 50
+                }
+            }
+            
+            # Add niche-specific filters if provided
+            if business_niche:
+                niche_keywords = {
+                    'education': ['study', 'learn', 'school', 'tutorial'],
+                    'fitness_wellness': ['workout', 'fitness', 'health', 'gym'],
+                    'business_consulting': ['success', 'business', 'entrepreneur', 'motivation'],
+                    'creative': ['art', 'creative', 'design', 'music']
+                }
+                
+                keywords = niche_keywords.get(business_niche, [])
+                if keywords:
+                    payload['query']['keywords'] = keywords
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result.get('data', {}).get('musics', [])
+                else:
+                    logger.error(f"Failed to get trending sounds: {response.status}")
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"Trending sounds error: {str(e)}")
+            return []
+    
+    async def get_hashtag_suggestions(self, content_text: str, business_niche: str) -> List[str]:
+        """Get hashtag suggestions based on content"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/research/hashtag/suggest/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'query': {
+                    'keywords': [content_text[:100]],  # Limit to 100 chars
+                    'region_code': 'US',
+                    'count': 20
+                }
+            }
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    hashtags = result.get('data', {}).get('hashtags', [])
+                    return [f"#{tag['name']}" for tag in hashtags]
+                else:
+                    logger.error(f"Failed to get hashtag suggestions: {response.status}")
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"Hashtag suggestions error: {str(e)}")
+            return []
+    
+    async def create_hashtag_challenge(self, challenge_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a branded hashtag challenge"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/hashtag/challenge/create/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'challenge_name': challenge_data.get('name'),
+                'challenge_description': challenge_data.get('description'),
+                'hashtag': challenge_data.get('hashtag'),
+                'start_date': challenge_data.get('start_date'),
+                'end_date': challenge_data.get('end_date'),
+                'challenge_type': challenge_data.get('type', 'BRANDED')
+            }
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        'success': True,
+                        'challenge_id': result.get('data', {}).get('challenge_id')
+                    }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Hashtag challenge creation failed: {error_text}")
+                    return {'success': False, 'error': error_text}
+                    
+        except Exception as e:
+            logger.error(f"Hashtag challenge creation error: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    @staticmethod
+    def get_authorization_url(client_key: str, redirect_uri: str, scopes: List[str]) -> str:
+        """Generate OAuth 2.0 authorization URL"""
+        base_url = "https://www.tiktok.com/v2/auth/authorize"
+        
+        params = {
+            'client_key': client_key,
+            'scope': ','.join(scopes),
+            'response_type': 'code',
+            'redirect_uri': redirect_uri,
+            'state': 'random_state_string'  # Should be generated randomly
         }
+        
+        return f"{base_url}?{urlencode(params)}"
+    
+    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> Dict[str, Any]:
+        """Exchange authorization code for access token"""
+        try:
+            session = await self._get_session()
+            
+            url = "https://open-api.tiktok.com/oauth/access_token/"
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Cache-Control': 'no-cache'
+            }
+            
+            data = {
+                'client_key': self.client_key,
+                'client_secret': self.client_secret,
+                'code': code,
+                'grant_type': 'authorization_code',
+                'redirect_uri': redirect_uri
+            }
+            
+            async with session.post(url, headers=headers, data=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        'success': True,
+                        'access_token': result.get('data', {}).get('access_token'),
+                        'refresh_token': result.get('data', {}).get('refresh_token'),
+                        'expires_in': result.get('data', {}).get('expires_in'),
+                        'token_type': result.get('data', {}).get('token_type')
+                    }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Token exchange failed: {error_text}")
+                    return {'success': False, 'error': error_text}
+                    
+        except Exception as e:
+            logger.error(f"Token exchange error: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
+        """Refresh access token using refresh token"""
+        try:
+            session = await self._get_session()
+            
+            url = "https://open-api.tiktok.com/oauth/refresh_token/"
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            
+            data = {
+                'client_key': self.client_key,
+                'client_secret': self.client_secret,
+                'grant_type': 'refresh_token',
+                'refresh_token': refresh_token
+            }
+            
+            async with session.post(url, headers=headers, data=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        'success': True,
+                        'access_token': result.get('data', {}).get('access_token'),
+                        'refresh_token': result.get('data', {}).get('refresh_token'),
+                        'expires_in': result.get('data', {}).get('expires_in')
+                    }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Token refresh failed: {error_text}")
+                    return {'success': False, 'error': error_text}
+                    
+        except Exception as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_user_info(self) -> Dict[str, Any]:
+        """Get authenticated user information"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/user/info/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'fields': [
+                    'open_id',
+                    'union_id',
+                    'avatar_url',
+                    'avatar_url_100',
+                    'avatar_url_200',
+                    'avatar_large_url',
+                    'display_name',
+                    'bio_description',
+                    'profile_deep_link',
+                    'is_verified',
+                    'follower_count',
+                    'following_count',
+                    'likes_count',
+                    'video_count'
+                ]
+            }
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result.get('data', {}).get('user', {})
+                else:
+                    logger.error(f"Failed to get user info: {response.status}")
+                    return {}
+                    
+        except Exception as e:
+            logger.error(f"User info error: {str(e)}")
+            return {}
+    
+    async def optimize_video_for_tiktok(self, video_file: str, business_niche: str) -> str:
+        """Optimize video file for TikTok format"""
+        try:
+            # This would use ffmpeg or similar to optimize the video
+            # For now, return the original file
+            # In production, implement:
+            # - Convert to vertical format (9:16 aspect ratio)
+            # - Optimize for mobile viewing
+            # - Compress for faster upload
+            # - Add captions if needed
+            
+            logger.info(f"Optimizing video for TikTok: {video_file}")
+            return video_file
+            
+        except Exception as e:
+            logger.error(f"Video optimization error: {str(e)}")
+            return video_file
+    
+    async def add_trending_sound(self, video_id: str, sound_id: str) -> bool:
+        """Add trending sound to an existing video"""
+        try:
+            session = await self._get_session()
+            
+            url = f"{self.base_url}/v2/video/sound/add/"
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'video_id': video_id,
+                'sound_id': sound_id
+            }
+            
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    logger.info(f"Added trending sound {sound_id} to video {video_id}")
+                    return True
+                else:
+                    logger.error(f"Failed to add trending sound: {response.status}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Add trending sound error: {str(e)}")
+            return False
+    
+    async def analyze_viral_potential(self, video_metadata: Dict[str, Any]) -> float:
+        """Analyze viral potential of content using TikTok's AI insights"""
+        try:
+            # This would use TikTok's content analysis APIs
+            # For now, implement a simplified scoring system
+            
+            viral_score = 0.0
+            
+            # Check description for viral elements
+            description = video_metadata.get('description', '').lower()
+            viral_keywords = ['trending', 'viral', 'challenge', 'duet', 'stitch']
+            
+            for keyword in viral_keywords:
+                if keyword in description:
+                    viral_score += 10
+            
+            # Check hashtags
+            hashtags = video_metadata.get('hashtags', [])
+            if any('#fyp' in tag.lower() for tag in hashtags):
+                viral_score += 20
+            
+            # Check video specs
+            if video_metadata.get('duration', 0) <= 30:
+                viral_score += 15  # Short videos perform better
+            
+            # Check posting time
+            current_hour = datetime.utcnow().hour
+            if current_hour in [19, 20, 21, 22]:  # Peak TikTok hours
+                viral_score += 10
+            
+            return min(viral_score, 100.0)
+            
+        except Exception as e:
+            logger.error(f"Viral potential analysis error: {str(e)}")
+            return 0.0

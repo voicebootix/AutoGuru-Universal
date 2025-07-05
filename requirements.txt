@@ -54,6 +54,7 @@ lxml>=4.9.0
 
 # Image Processing
 Pillow>=10.0.0
+opencv-python>=4.8.0
 
 # Social Media Platform SDKs (API-only approaches)
 tweepy>=4.14.0
