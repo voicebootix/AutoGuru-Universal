@@ -484,17 +484,148 @@ class UniversalAnalyticsEngine(ABC):
     @abstractmethod
     async def collect_analytics_data(self, request: AnalyticsRequest) -> Dict[str, Any]:
         """Collect comprehensive analytics data"""
-        pass
+        try:
+            logger.info(f"Collecting analytics data for {request.analytics_type}")
+            
+            # Determine data sources based on analysis type and scope
+            data_sources = self._determine_data_sources(request)
+            
+            # Create filters for data collection
+            filters = {
+                'client_id': request.client_id,
+                'start_date': request.timeframe_start,
+                'end_date': request.timeframe_end,
+                'business_niche': request.business_niche,
+                'specific_metrics': request.specific_metrics
+            }
+            
+            # Collect data from aggregator
+            raw_data = await self.data_aggregator.aggregate_data(data_sources, filters)
+            
+            # Enrich with business context
+            enriched_data = await self._enrich_with_business_context(raw_data, request)
+            
+            # Add comparison period data if requested
+            if request.comparison_periods:
+                comparison_data = await self._collect_comparison_data(request)
+                enriched_data['comparison_periods'] = comparison_data
+            
+            # Structure for analytics processing
+            analytics_data = {
+                'request_id': request.request_id,
+                'client_id': request.client_id,
+                'business_niche': request.business_niche,
+                'analysis_type': request.analysis_type,
+                'scope': request.scope.value,
+                'timeframe': {
+                    'start': request.timeframe_start.isoformat(),
+                    'end': request.timeframe_end.isoformat()
+                },
+                'raw_data': enriched_data,
+                'data_sources': data_sources,
+                'metrics_requested': request.specific_metrics,
+                'collection_metadata': {
+                    'collected_at': datetime.now().isoformat(),
+                    'data_completeness': await self._assess_data_completeness(enriched_data),
+                    'data_quality_score': await self._calculate_data_quality_score(enriched_data)
+                }
+            }
+            
+            logger.info(f"Analytics data collection completed for {request.request_id}")
+            return analytics_data
+            
+        except Exception as e:
+            error_msg = f"Analytics data collection failed: {str(e)}"
+            await self.log_analytics_error(error_msg)
+            raise AnalyticsError(error_msg)
     
     @abstractmethod
     async def perform_analysis(self, data: Dict[str, Any], request: AnalyticsRequest) -> List[AnalyticsInsight]:
         """Perform advanced analysis and generate insights"""
-        pass
+        try:
+            logger.info(f"Performing analytics analysis for {request.analytics_type}")
+            
+            # Generate insights using insight generator
+            insights = await self.insight_generator.generate_insights(
+                data['raw_data'], 
+                data, 
+                request.business_niche
+            )
+            
+            # Perform predictive analysis if requested
+            if request.include_predictions:
+                predictive_insights = await self._generate_predictive_insights(data, request)
+                insights.extend(predictive_insights)
+            
+            # Perform competitive analysis if in scope
+            if request.scope in [AnalyticsScope.COMPETITIVE, AnalyticsScope.CROSS_PLATFORM]:
+                competitive_insights = await self._generate_competitive_insights(data, request)
+                insights.extend(competitive_insights)
+            
+            # Apply business niche specific analysis
+            niche_insights = await self._perform_niche_specific_analysis(data, request)
+            insights.extend(niche_insights)
+            
+            # Filter and rank insights based on request criteria
+            filtered_insights = await self._filter_and_rank_insights(insights, request)
+            
+            # Validate insights quality
+            validated_insights = await self._validate_insights_quality(filtered_insights)
+            
+            logger.info(f"Generated {len(validated_insights)} validated insights")
+            return validated_insights
+            
+        except Exception as e:
+            error_msg = f"Analytics analysis failed: {str(e)}"
+            await self.log_analytics_error(error_msg)
+            raise AnalyticsError(error_msg)
     
     @abstractmethod
     async def generate_visualizations(self, data: Dict[str, Any], insights: List[AnalyticsInsight]) -> Dict[str, Any]:
         """Generate interactive visualizations"""
-        pass
+        try:
+            logger.info(f"Generating visualizations for {len(insights)} insights")
+            
+            # Create dashboard based on output format
+            if data.get('output_format') == ReportFormat.INTERACTIVE_DASHBOARD:
+                visualizations = await self.visualization_engine.create_interactive_dashboard(
+                    data['raw_data'], insights
+                )
+            else:
+                # Create static visualizations
+                visualizations = await self._create_static_visualizations(data, insights)
+            
+            # Add insight-specific visualizations
+            for insight in insights:
+                if insight.visualization:
+                    viz_key = f"insight_{insight.insight_id}"
+                    visualizations[viz_key] = insight.visualization
+            
+            # Generate summary charts
+            summary_charts = await self._generate_summary_charts(data, insights)
+            visualizations['summary_charts'] = summary_charts
+            
+            # Create performance tracking visualizations
+            performance_viz = await self._create_performance_visualizations(data)
+            visualizations['performance_tracking'] = performance_viz
+            
+            # Add drill-down capabilities if requested
+            if data.get('drill_down_capabilities', False):
+                drill_down_viz = await self._create_drill_down_visualizations(data, insights)
+                visualizations['drill_down'] = drill_down_viz
+            
+            # Optimize for requested output format
+            optimized_viz = await self._optimize_visualizations_for_format(
+                visualizations, data.get('output_format', ReportFormat.INTERACTIVE_DASHBOARD)
+            )
+            
+            logger.info(f"Generated {len(optimized_viz)} visualization components")
+            return optimized_viz
+            
+        except Exception as e:
+            error_msg = f"Visualization generation failed: {str(e)}"
+            await self.log_analytics_error(error_msg)
+            raise AnalyticsError(error_msg)
     
     async def calculate_business_kpis(self, data: Dict[str, Any], business_niche: str) -> List[BusinessKPI]:
         """Calculate comprehensive business KPIs"""

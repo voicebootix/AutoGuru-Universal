@@ -8,7 +8,8 @@ const useTasksStore = create((set) => ({
   fetchTasks: async () => {
     set({ loading: true, error: null });
     try {
-      const tasks = await tasksApi.fetchTasks();
+      const result = await tasksApi.fetchTasks();
+      const tasks = result.tasks || result || [];
       set({ tasks, loading: false });
     } catch (error) {
       set({ error, loading: false });
@@ -25,7 +26,7 @@ const useTasksStore = create((set) => ({
     }
   },
   subscribeTasks: (onMessage) => {
-    return tasksApi.subscribeTasksWS(onMessage);
+    return tasksApi.subscribeToTasks(onMessage);
   },
 }));
 

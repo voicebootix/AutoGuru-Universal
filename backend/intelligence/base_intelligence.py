@@ -110,17 +110,192 @@ class UniversalIntelligenceEngine(ABC):
     @abstractmethod
     async def collect_data(self, timeframe: AnalyticsTimeframe) -> Dict[str, Any]:
         """Collect relevant data for analysis"""
-        pass
+        try:
+            logger.info(f"Collecting data for {timeframe.value} analysis")
+            
+            # Calculate date range
+            end_date = datetime.now()
+            start_date = await self.get_timeframe_start_date(end_date, timeframe)
+            
+            # Collect data from multiple sources in parallel
+            platform_data_task = self.data_aggregator.aggregate_platform_data(
+                self.client_id, start_date, end_date
+            )
+            revenue_data_task = self.data_aggregator.aggregate_revenue_data(
+                self.client_id, start_date, end_date
+            )
+            
+            # Gather all data
+            platform_data, revenue_data = await asyncio.gather(
+                platform_data_task, revenue_data_task
+            )
+            
+            # Combine and structure data
+            collected_data = {
+                'client_id': self.client_id,
+                'timeframe': timeframe.value,
+                'date_range': {
+                    'start': start_date.isoformat(),
+                    'end': end_date.isoformat()
+                },
+                'platform_data': platform_data,
+                'revenue_data': revenue_data,
+                
+                # Revenue metrics
+                'revenue_sources': revenue_data.get('revenue_by_source', {}),
+                'total_revenue_current': revenue_data.get('total_revenue', 0),
+                'previous_period_revenue': revenue_data.get('previous_period_revenue', 0),
+                'conversion_revenue': revenue_data.get('conversion_revenue', 0),
+                
+                # Engagement metrics
+                'engagement_by_platform': platform_data.get('engagement_by_platform', {}),
+                'total_impressions': sum(platform_data.get('impressions_by_platform', {}).values()),
+                'total_reach': sum(platform_data.get('reach_by_platform', {}).values()),
+                'total_shares': sum(platform_data.get('shares_by_platform', {}).values()),
+                'new_followers_from_shares': platform_data.get('follower_growth', {}).get('from_shares', 0),
+                'previous_period_engagement': platform_data.get('previous_period_engagement', 0),
+                
+                # Content metrics
+                'total_posts': platform_data.get('total_posts', 0),
+                'content_performance': platform_data.get('content_performance', []),
+                'viral_posts': platform_data.get('viral_posts', []),
+                
+                # Business metrics
+                'total_marketing_cost': revenue_data.get('marketing_spend', 0),
+                'automation_time_saved_hours': revenue_data.get('automation_savings', {}).get('time_hours', 0),
+                'total_time_invested_hours': revenue_data.get('time_investment', {}).get('total_hours', 40),
+                'average_hourly_rate': revenue_data.get('business_metrics', {}).get('hourly_rate', 50),
+                
+                # Customer metrics
+                'engagement_decline_percentage': platform_data.get('engagement_trends', {}).get('decline_percentage', 0),
+                'days_since_last_purchase': revenue_data.get('customer_metrics', {}).get('days_since_last_purchase', 0),
+                
+                # Market data
+                'addressable_market_size': revenue_data.get('market_data', {}).get('addressable_market', 1000000),
+                'current_total_reach': sum(platform_data.get('reach_by_platform', {}).values()),
+                
+                # Content analysis data
+                'content_themes': platform_data.get('content_analysis', {}).get('themes', []),
+                'engagement_patterns': platform_data.get('engagement_analysis', {}),
+                'audience_demographics': platform_data.get('audience_data', {}),
+                
+                # Collected timestamp
+                'collected_at': datetime.now().isoformat()
+            }
+            
+            logger.info(f"Data collection completed for {self.client_id}")
+            return collected_data
+            
+        except Exception as e:
+            error_msg = f"Data collection failed: {str(e)}"
+            await self.log_intelligence_error(error_msg)
+            raise IntelligenceEngineError(error_msg)
     
     @abstractmethod
     async def analyze_data(self, data: Dict[str, Any]) -> List[IntelligenceInsight]:
         """Analyze data and generate insights"""
-        pass
+        try:
+            logger.info(f"Analyzing data for intelligence insights")
+            insights = []
+            
+            # Detect business niche for context
+            business_niche = await self.detect_business_niche_from_data(data)
+            
+            # 1. Revenue Analysis Insights
+            revenue_insights = await self._analyze_revenue_patterns(data, business_niche)
+            insights.extend(revenue_insights)
+            
+            # 2. Engagement Analysis Insights
+            engagement_insights = await self._analyze_engagement_patterns(data, business_niche)
+            insights.extend(engagement_insights)
+            
+            # 3. Growth Opportunity Insights
+            growth_insights = await self._analyze_growth_opportunities(data, business_niche)
+            insights.extend(growth_insights)
+            
+            # 4. Risk Assessment Insights
+            risk_insights = await self._analyze_risk_factors(data, business_niche)
+            insights.extend(risk_insights)
+            
+            # 5. Content Performance Insights
+            content_insights = await self._analyze_content_performance(data, business_niche)
+            insights.extend(content_insights)
+            
+            # 6. Efficiency Insights
+            efficiency_insights = await self._analyze_efficiency_metrics(data, business_niche)
+            insights.extend(efficiency_insights)
+            
+            # 7. Competitive Insights
+            competitive_insights = await self._analyze_competitive_position(data, business_niche)
+            insights.extend(competitive_insights)
+            
+            # Sort insights by impact and confidence
+            insights.sort(key=lambda x: (
+                {'high': 3, 'medium': 2, 'low': 1}.get(x.impact_level, 0),
+                x.confidence_score
+            ), reverse=True)
+            
+            logger.info(f"Generated {len(insights)} intelligence insights")
+            return insights
+            
+        except Exception as e:
+            error_msg = f"Data analysis failed: {str(e)}"
+            await self.log_intelligence_error(error_msg)
+            raise IntelligenceEngineError(error_msg)
     
     @abstractmethod
     async def generate_recommendations(self, insights: List[IntelligenceInsight]) -> List[str]:
         """Generate actionable business recommendations"""
-        pass
+        try:
+            logger.info(f"Generating recommendations from {len(insights)} insights")
+            
+            # Collect all recommendations from insights
+            all_recommendations = []
+            
+            # Extract recommendations from high-impact insights first
+            high_impact_insights = [i for i in insights if i.impact_level == "high"]
+            medium_impact_insights = [i for i in insights if i.impact_level == "medium"]
+            low_impact_insights = [i for i in insights if i.impact_level == "low"]
+            
+            # Process high impact first
+            for insight in sorted(high_impact_insights, key=lambda x: x.confidence_score, reverse=True):
+                for rec in insight.actionable_recommendations:
+                    if rec not in all_recommendations:
+                        all_recommendations.append(rec)
+            
+            # Add medium impact recommendations
+            for insight in sorted(medium_impact_insights, key=lambda x: x.confidence_score, reverse=True):
+                for rec in insight.actionable_recommendations:
+                    if rec not in all_recommendations and len(all_recommendations) < 15:
+                        all_recommendations.append(rec)
+            
+            # Add low impact if needed
+            for insight in sorted(low_impact_insights, key=lambda x: x.confidence_score, reverse=True):
+                for rec in insight.actionable_recommendations:
+                    if rec not in all_recommendations and len(all_recommendations) < 20:
+                        all_recommendations.append(rec)
+            
+            # Generate universal strategic recommendations
+            strategic_recommendations = await self._generate_strategic_recommendations(insights)
+            
+            # Combine and prioritize
+            final_recommendations = await self._prioritize_universal_recommendations(
+                all_recommendations, strategic_recommendations, insights
+            )
+            
+            logger.info(f"Generated {len(final_recommendations)} prioritized recommendations")
+            return final_recommendations[:10]  # Return top 10
+            
+        except Exception as e:
+            error_msg = f"Recommendation generation failed: {str(e)}"
+            await self.log_intelligence_error(error_msg)
+            return [
+                "Review current marketing strategy for optimization opportunities",
+                "Analyze competitor activities for market insights",
+                "Focus on high-performing content formats",
+                "Optimize posting schedule based on audience activity",
+                "Implement automated reporting for better decision making"
+            ]
     
     async def get_business_intelligence(self, timeframe: AnalyticsTimeframe = AnalyticsTimeframe.MONTH) -> Dict[str, Any]:
         """Main intelligence gathering function"""
