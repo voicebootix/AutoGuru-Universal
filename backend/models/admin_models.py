@@ -233,7 +233,7 @@ class PlatformCredentialUpdate(BaseModel):
 class AdminUserCreate(BaseModel):
     """Create admin user"""
     username: str = Field(..., min_length=3, max_length=50)
-    email: str = Field(..., regex=r'^[^@]+@[^@]+\.[^@]+$')
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
     password: str = Field(..., min_length=8)
     role: AdminRole
     permissions: List[str] = Field(default_factory=list)
@@ -241,7 +241,7 @@ class AdminUserCreate(BaseModel):
 
 class AdminUserUpdate(BaseModel):
     """Update admin user"""
-    email: Optional[str] = Field(None, regex=r'^[^@]+@[^@]+\.[^@]+$')
+    email: Optional[str] = Field(None, pattern=r'^[^@]+@[^@]+\.[^@]+$')
     role: Optional[AdminRole] = None
     is_active: Optional[bool] = None
     permissions: Optional[List[str]] = None
