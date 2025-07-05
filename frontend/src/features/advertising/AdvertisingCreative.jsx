@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Grid,
@@ -76,6 +76,27 @@ const AdvertisingCreative = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedCreative, setSelectedCreative] = useState(null);
   const [optimizationResults, setOptimizationResults] = useState(null);
+
+  // Memoized psychological trigger effectiveness values to prevent flickering
+  const psychologicalTriggerEffectiveness = useMemo(() => {
+    const triggers = ['Scarcity', 'Social Proof', 'Authority', 'FOMO', 'Urgency', 'Reciprocity'];
+    return triggers.reduce((acc, trigger) => {
+      // Generate realistic effectiveness values based on trigger type
+      const baseEffectiveness = {
+        'Scarcity': 78,
+        'Social Proof': 82,
+        'Authority': 75,
+        'FOMO': 85,
+        'Urgency': 80,
+        'Reciprocity': 72
+      };
+      
+      // Add some variance but keep it stable
+      const variance = Math.floor(Math.random() * 10) - 5; // -5 to +5
+      acc[trigger] = Math.max(60, Math.min(95, baseEffectiveness[trigger] + variance));
+      return acc;
+    }, {});
+  }, []); // Empty dependency array ensures this only runs once
 
   const businessNiches = [
     'Educational Business', 'Business Consulting', 'Fitness & Wellness',
@@ -593,7 +614,7 @@ const AdvertisingCreative = () => {
                     </Typography>
                     <LinearProgress 
                       variant="determinate" 
-                      value={Math.random() * 40 + 60} 
+                      value={psychologicalTriggerEffectiveness[trigger] || 75} 
                       sx={{ mt: 2 }}
                     />
                   </CardContent>
