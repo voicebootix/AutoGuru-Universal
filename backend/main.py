@@ -64,6 +64,13 @@ from backend.intelligence import (
     IntelligenceInsight
 )
 
+# Import Admin modules
+try:
+    from backend.api.admin_routes import admin_router
+except ImportError:
+    logger.warning("Admin routes not available")
+    admin_router = None
+
 # Build handlers list
 handlers: List[logging.Handler] = [logging.StreamHandler()]
 if hasattr(settings, 'logging') and settings.logging.enable_file_logging:
@@ -415,6 +422,10 @@ else:
 frontend_path = Path("frontend")
 if frontend_path.exists():
     app.mount("/static", StaticFiles(directory="frontend"), name="static")
+
+# Include admin routes
+if admin_router:
+    app.include_router(admin_router)
 
 
 # Root endpoint
