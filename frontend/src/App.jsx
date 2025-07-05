@@ -9,6 +9,15 @@ import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import LinkIcon from '@mui/icons-material/Link';
 
+// Import the actual feature components
+import Dashboard from './features/dashboard/Dashboard';
+import Analytics from './features/analytics/Analytics';
+import Content from './features/content/Content';
+import Platforms from './features/platforms/Platforms';
+import Tasks from './features/tasks/Tasks';
+import Settings from './features/settings/Settings';
+import Support from './features/support/Support';
+
 const drawerWidth = 220;
 
 const navItems = [
@@ -20,10 +29,6 @@ const navItems = [
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   { text: 'Support', icon: <SupportAgentIcon />, path: '/support' },
 ];
-
-function Placeholder({ title }) {
-  return <Box p={4}><Typography variant="h4">{title}</Typography><Typography variant="body1">Coming soon...</Typography></Box>;
-}
 
 export default function App() {
   return (
@@ -61,13 +66,13 @@ export default function App() {
           <Toolbar />
           <Container maxWidth="xl">
             <Routes>
-              <Route path="/" element={<Placeholder title="Dashboard" />} />
-              <Route path="/analytics" element={<Placeholder title="Analytics" />} />
-              <Route path="/content" element={<Placeholder title="Content Creation & Scheduling" />} />
-              <Route path="/platforms" element={<Placeholder title="Platform Management" />} />
-              <Route path="/tasks" element={<Placeholder title="Background Tasks" />} />
-              <Route path="/settings" element={<Placeholder title="Settings & Security" />} />
-              <Route path="/support" element={<Placeholder title="Support & Documentation" />} />
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/content" element={<Content />} />
+              <Route path="/platforms" element={<Platforms />} />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/support" element={<Support />} />
             </Routes>
           </Container>
         </Box>
