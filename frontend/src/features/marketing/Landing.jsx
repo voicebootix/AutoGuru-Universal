@@ -37,7 +37,7 @@ import {
   Facebook,
   Twitter,
   YouTube,
-  TikTok,
+  MusicNote,
   Star,
   Groups,
   Analytics,
@@ -216,7 +216,7 @@ const Landing = () => {
     { name: 'Facebook', icon: <Facebook />, color: '#1877F2' },
     { name: 'Twitter', icon: <Twitter />, color: '#1DA1F2' },
     { name: 'YouTube', icon: <YouTube />, color: '#FF0000' },
-    { name: 'TikTok', icon: <TikTok />, color: '#000000' }
+    { name: 'TikTok', icon: <MusicNote />, color: '#000000' }
   ];
 
   return (
