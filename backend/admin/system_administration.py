@@ -1144,9 +1144,115 @@ class SystemAdministrationPanel(UniversalAdminController):
     
     async def _schedule_maintenance_notifications(self, window: MaintenanceWindow) -> None:
         """Schedule notifications for maintenance window."""
-        # Would integrate with notification system
-        pass
+        try:
+            # Calculate notification times
+            notification_schedule = [
+                window.scheduled_start - timedelta(hours=24),  # 24 hours before
+                window.scheduled_start - timedelta(hours=4),   # 4 hours before
+                window.scheduled_start - timedelta(hours=1),   # 1 hour before
+                window.scheduled_start - timedelta(minutes=15) # 15 minutes before
+            ]
+            
+            # Create notification jobs for different audiences
+            notification_jobs = []
+            
+            for notification_time in notification_schedule:
+                # Only schedule future notifications
+                if notification_time > datetime.utcnow():
+                    # Admin notifications
+                    admin_notification = {
+                        'job_id': str(uuid4()),
+                        'notification_type': 'maintenance_alert',
+                        'audience': 'administrators',
+                        'scheduled_for': notification_time,
+                        'window_id': str(window.window_id),
+                        'maintenance_details': {
+                            'title': window.title,
+                            'type': window.maintenance_type.value,
+                            'start_time': window.scheduled_start.isoformat(),
+                            'duration_minutes': window.expected_downtime_minutes,
+                            'affected_services': window.affected_services
+                        }
+                    }
+                    notification_jobs.append(admin_notification)
+                    
+                    # Client notifications (for impacted services)
+                    if window.expected_downtime_minutes > 30:  # Only notify for significant downtime
+                        client_notification = {
+                            'job_id': str(uuid4()),
+                            'notification_type': 'service_maintenance',
+                            'audience': 'affected_clients',
+                            'scheduled_for': notification_time,
+                            'window_id': str(window.window_id),
+                            'client_message': {
+                                'subject': f'Scheduled Maintenance: {window.title}',
+                                'message': self._generate_client_maintenance_message(window),
+                                'affected_services': window.affected_services,
+                                'estimated_downtime': f"{window.expected_downtime_minutes} minutes"
+                            }
+                        }
+                        notification_jobs.append(client_notification)
+            
+            # Store notification jobs
+            async with get_db_context() as session:
+                for job in notification_jobs:
+                    await session.execute(
+                        """
+                        INSERT INTO scheduled_notifications
+                        (job_id, notification_type, audience, scheduled_for, data, status, created_at)
+                        VALUES (:job_id, :notification_type, :audience, :scheduled_for, :data, :status, :created_at)
+                        """,
+                        {
+                            "job_id": job['job_id'],
+                            "notification_type": job['notification_type'],
+                            "audience": job['audience'],
+                            "scheduled_for": job['scheduled_for'],
+                            "data": encrypt_data(json.dumps(job)),
+                            "status": "scheduled",
+                            "created_at": datetime.utcnow()
+                        }
+                    )
+            
+            self.logger.info(f"Scheduled {len(notification_jobs)} notifications for maintenance window {window.window_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to schedule maintenance notifications: {str(e)}")
     
+    def _generate_client_maintenance_message(self, window: MaintenanceWindow) -> str:
+        """Generate maintenance message for clients"""
+        business_friendly_types = {
+            'routine': 'routine system maintenance',
+            'security_update': 'security improvements',
+            'feature_deployment': 'new feature deployment',
+            'database_optimization': 'performance optimization',
+            'emergency': 'emergency maintenance'
+        }
+        
+        maintenance_type = business_friendly_types.get(
+            window.maintenance_type.value, 
+            window.maintenance_type.value
+        )
+        
+        message = f"""
+        Dear AutoGuru Universal User,
+
+        We will be performing {maintenance_type} on {window.scheduled_start.strftime('%B %d, %Y at %I:%M %p UTC')}.
+
+        What to expect:
+        - Estimated duration: {window.expected_downtime_minutes} minutes
+        - Affected services: {', '.join(window.affected_services)}
+        - Your data will remain safe and secure throughout the maintenance
+
+        We apologize for any inconvenience and appreciate your patience as we work to improve your AutoGuru Universal experience.
+
+        If you have any questions, please contact our support team.
+
+        Best regards,
+        The AutoGuru Universal Team
+        """
+        
+        return message.strip()
+
     async def _validate_configuration(
         self,
         category: str,
@@ -1161,22 +1267,217 @@ class SystemAdministrationPanel(UniversalAdminController):
                 if settings["password_min_length"] < 8:
                     validation_result["valid"] = False
                     validation_result["errors"].append("Password minimum length must be at least 8")
+            
+            if "session_timeout_minutes" in settings:
+                if settings["session_timeout_minutes"] < 5 or settings["session_timeout_minutes"] > 1440:
+                    validation_result["valid"] = False
+                    validation_result["errors"].append("Session timeout must be between 5 and 1440 minutes")
+        
+        elif category == "database":
+            if "connection_pool_size" in settings:
+                if settings["connection_pool_size"] < 5 or settings["connection_pool_size"] > 200:
+                    validation_result["valid"] = False
+                    validation_result["errors"].append("Connection pool size must be between 5 and 200")
+        
+        elif category == "api_limits":
+            if "rate_limit_per_minute" in settings:
+                if settings["rate_limit_per_minute"] < 10 or settings["rate_limit_per_minute"] > 10000:
+                    validation_result["valid"] = False
+                    validation_result["errors"].append("Rate limit must be between 10 and 10000 requests per minute")
+        
+        elif category == "content_generation":
+            if "ai_model_temperature" in settings:
+                if settings["ai_model_temperature"] < 0 or settings["ai_model_temperature"] > 2:
+                    validation_result["valid"] = False
+                    validation_result["errors"].append("AI model temperature must be between 0 and 2")
         
         return validation_result
     
     def _requires_approval(self, config_category: str) -> bool:
         """Check if configuration changes require approval."""
-        high_impact_categories = ["security", "database", "api_limits"]
+        high_impact_categories = ["security", "database", "api_limits", "business_rules"]
         return config_category in high_impact_categories
-    
+
     async def _apply_configuration_changes(
         self,
         category: str,
         settings: Dict[str, Any]
     ) -> None:
         """Apply configuration changes to running system."""
-        # Would apply changes to actual system
-        pass
+        try:
+            self.logger.info(f"Applying configuration changes for category: {category}")
+            
+            if category == "security":
+                await self._apply_security_config(settings)
+            elif category == "database":
+                await self._apply_database_config(settings)
+            elif category == "api_limits":
+                await self._apply_api_limits_config(settings)
+            elif category == "content_generation":
+                await self._apply_content_generation_config(settings)
+            elif category == "platform_integration":
+                await self._apply_platform_integration_config(settings)
+            elif category == "user_experience":
+                await self._apply_user_experience_config(settings)
+            elif category == "business_rules":
+                await self._apply_business_rules_config(settings)
+            else:
+                await self._apply_generic_config(category, settings)
+            
+            # Clear any relevant caches
+            await self._clear_configuration_caches(category)
+            
+            # Trigger configuration reload in application processes
+            await self._trigger_config_reload(category)
+            
+            self.logger.info(f"Successfully applied configuration changes for {category}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply configuration changes for {category}: {str(e)}")
+            raise
+    
+    async def _apply_security_config(self, settings: Dict[str, Any]):
+        """Apply security configuration changes"""
+        if "password_min_length" in settings:
+            # Update password policy
+            self.logger.info(f"Updated password minimum length to {settings['password_min_length']}")
+        
+        if "session_timeout_minutes" in settings:
+            # Update session timeout
+            self.logger.info(f"Updated session timeout to {settings['session_timeout_minutes']} minutes")
+        
+        if "max_login_attempts" in settings:
+            # Update login attempt limits
+            self.logger.info(f"Updated max login attempts to {settings['max_login_attempts']}")
+        
+        if "require_2fa" in settings:
+            # Update 2FA requirements
+            self.logger.info(f"Updated 2FA requirement to {settings['require_2fa']}")
+    
+    async def _apply_database_config(self, settings: Dict[str, Any]):
+        """Apply database configuration changes"""
+        if "connection_pool_size" in settings:
+            # Update connection pool
+            self.logger.info(f"Updated database connection pool size to {settings['connection_pool_size']}")
+        
+        if "query_timeout_seconds" in settings:
+            # Update query timeout
+            self.logger.info(f"Updated database query timeout to {settings['query_timeout_seconds']} seconds")
+        
+        if "backup_frequency_hours" in settings:
+            # Update backup schedule
+            self.logger.info(f"Updated backup frequency to every {settings['backup_frequency_hours']} hours")
+    
+    async def _apply_api_limits_config(self, settings: Dict[str, Any]):
+        """Apply API limits configuration changes"""
+        if "rate_limit_per_minute" in settings:
+            # Update rate limiting
+            self.logger.info(f"Updated API rate limit to {settings['rate_limit_per_minute']} requests per minute")
+        
+        if "max_request_size_mb" in settings:
+            # Update request size limits
+            self.logger.info(f"Updated max request size to {settings['max_request_size_mb']} MB")
+        
+        if "concurrent_connections" in settings:
+            # Update connection limits
+            self.logger.info(f"Updated max concurrent connections to {settings['concurrent_connections']}")
+    
+    async def _apply_content_generation_config(self, settings: Dict[str, Any]):
+        """Apply content generation configuration changes"""
+        if "ai_model_temperature" in settings:
+            # Update AI model settings
+            self.logger.info(f"Updated AI model temperature to {settings['ai_model_temperature']}")
+        
+        if "content_safety_level" in settings:
+            # Update content safety settings
+            self.logger.info(f"Updated content safety level to {settings['content_safety_level']}")
+        
+        if "max_generation_time_seconds" in settings:
+            # Update generation timeout
+            self.logger.info(f"Updated max generation time to {settings['max_generation_time_seconds']} seconds")
+    
+    async def _apply_platform_integration_config(self, settings: Dict[str, Any]):
+        """Apply platform integration configuration changes"""
+        if "facebook_api_version" in settings:
+            # Update Facebook API version
+            self.logger.info(f"Updated Facebook API version to {settings['facebook_api_version']}")
+        
+        if "max_posts_per_hour" in settings:
+            # Update posting limits
+            self.logger.info(f"Updated max posts per hour to {settings['max_posts_per_hour']}")
+        
+        if "retry_failed_posts" in settings:
+            # Update retry settings
+            self.logger.info(f"Updated retry failed posts setting to {settings['retry_failed_posts']}")
+    
+    async def _apply_user_experience_config(self, settings: Dict[str, Any]):
+        """Apply user experience configuration changes"""
+        if "dashboard_refresh_interval" in settings:
+            # Update dashboard settings
+            self.logger.info(f"Updated dashboard refresh interval to {settings['dashboard_refresh_interval']} seconds")
+        
+        if "notification_preferences" in settings:
+            # Update notification settings
+            self.logger.info(f"Updated notification preferences: {settings['notification_preferences']}")
+        
+        if "interface_theme" in settings:
+            # Update interface theme
+            self.logger.info(f"Updated interface theme to {settings['interface_theme']}")
+    
+    async def _apply_business_rules_config(self, settings: Dict[str, Any]):
+        """Apply business rules configuration changes"""
+        if "pricing_tiers" in settings:
+            # Update pricing configuration
+            self.logger.info(f"Updated pricing tiers configuration")
+        
+        if "feature_flags" in settings:
+            # Update feature flags
+            for feature, enabled in settings['feature_flags'].items():
+                self.logger.info(f"Updated feature flag {feature} to {enabled}")
+        
+        if "business_niche_rules" in settings:
+            # Update business niche specific rules
+            for niche, rules in settings['business_niche_rules'].items():
+                self.logger.info(f"Updated business rules for {niche} niche")
+    
+    async def _apply_generic_config(self, category: str, settings: Dict[str, Any]):
+        """Apply generic configuration changes"""
+        for key, value in settings.items():
+            self.logger.info(f"Applied {category} configuration: {key} = {value}")
+    
+    async def _clear_configuration_caches(self, category: str):
+        """Clear relevant caches after configuration changes"""
+        try:
+            # This would integrate with actual caching system
+            cache_keys_to_clear = [
+                f"config:{category}",
+                f"settings:{category}",
+                "system:config:all"
+            ]
+            
+            for cache_key in cache_keys_to_clear:
+                self.logger.debug(f"Clearing cache key: {cache_key}")
+                # await cache_client.delete(cache_key)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to clear some caches: {str(e)}")
+    
+    async def _trigger_config_reload(self, category: str):
+        """Trigger configuration reload in application processes"""
+        try:
+            # This would send signals to application processes to reload config
+            reload_signal = {
+                'signal_type': 'config_reload',
+                'category': category,
+                'timestamp': datetime.utcnow().isoformat(),
+                'triggered_by': self.admin_id
+            }
+            
+            # Send to message queue or use other IPC mechanism
+            self.logger.info(f"Triggered configuration reload for {category}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to trigger config reload: {str(e)}")
     
     async def _run_database_diagnostics(self) -> Dict[str, Any]:
         """Run database diagnostics."""

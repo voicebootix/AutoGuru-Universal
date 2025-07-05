@@ -958,3 +958,548 @@ class FacebookEnhancedPublisher(UniversalPlatformPublisher):
                 'emoji_usage': self.engagement_optimizer.engagement_patterns[business_niche]['emoji_usage']
             }
         }
+
+    # Facebook Groups Integration
+    async def post_to_group(self, content: Dict[str, Any], group_id: str) -> PublishResult:
+        """Post content to Facebook group"""
+        if not self._authenticated:
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message="Not authenticated"
+            )
+        
+        try:
+            # Detect business niche for group-specific optimization
+            business_niche = await self.detect_business_niche(content.get('text', ''))
+            
+            # Optimize content for group engagement
+            engagement_opts = await self.engagement_optimizer.optimize_for_engagement(
+                content, business_niche
+            )
+            
+            # Prepare group post data
+            group_post_data = {
+                'message': engagement_opts['optimized_text'],
+                'published': True
+            }
+            
+            # Add media for groups
+            if content.get('image_url'):
+                group_post_data['url'] = content['image_url']
+            elif content.get('link_url'):
+                group_post_data['link'] = content['link_url']
+            
+            # Post to group using Graph API
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{group_id}/feed"
+                group_post_data['access_token'] = self._access_token
+                
+                async with session.post(url, data=group_post_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        post_id = result['id']
+                        
+                        return PublishResult(
+                            platform="facebook",
+                            post_id=post_id,
+                            url=f"https://www.facebook.com/groups/{group_id}/posts/{post_id.split('_')[1]}",
+                            status=PublishStatus.SUCCESS,
+                            metadata={
+                                'group_id': group_id,
+                                'business_niche': business_niche,
+                                'optimizations_applied': engagement_opts
+                            }
+                        )
+                    else:
+                        error = await response.text()
+                        raise Exception(f"Group post failed: {error}")
+                        
+        except Exception as e:
+            logger.error(f"Failed to post to Facebook group: {e}")
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message=str(e)
+            )
+
+    # Facebook Events Integration
+    async def create_event(self, event_data: Dict[str, Any]) -> PublishResult:
+        """Create Facebook event"""
+        if not self._authenticated:
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message="Not authenticated"
+            )
+        
+        try:
+            # Prepare event data
+            fb_event_data = {
+                'name': event_data['title'],
+                'description': event_data['description'],
+                'start_time': event_data['start_time'],
+                'location': event_data.get('location', ''),
+                'privacy': event_data.get('privacy', 'PUBLIC'),
+                'access_token': self._access_token
+            }
+            
+            if event_data.get('end_time'):
+                fb_event_data['end_time'] = event_data['end_time']
+            
+            if event_data.get('cover_photo_url'):
+                fb_event_data['cover'] = {'source': event_data['cover_photo_url']}
+            
+            # Create event using Graph API
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{self.page_data['page_id']}/events"
+                
+                async with session.post(url, data=fb_event_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        event_id = result['id']
+                        
+                        return PublishResult(
+                            platform="facebook",
+                            post_id=event_id,
+                            url=f"https://www.facebook.com/events/{event_id}",
+                            status=PublishStatus.SUCCESS,
+                            metadata={
+                                'event_id': event_id,
+                                'event_type': 'facebook_event',
+                                'privacy': fb_event_data['privacy']
+                            }
+                        )
+                    else:
+                        error = await response.text()
+                        raise Exception(f"Event creation failed: {error}")
+                        
+        except Exception as e:
+            logger.error(f"Failed to create Facebook event: {e}")
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message=str(e)
+            )
+
+    # Facebook Shop Integration  
+    async def manage_facebook_shop(self, product_data: Dict[str, Any]) -> PublishResult:
+        """Manage Facebook Shop products"""
+        if not self._authenticated:
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message="Not authenticated"
+            )
+        
+        try:
+            action = product_data.get('action', 'create')  # create, update, delete
+            
+            if action == 'create':
+                return await self._create_shop_product(product_data)
+            elif action == 'update':
+                return await self._update_shop_product(product_data)
+            elif action == 'delete':
+                return await self._delete_shop_product(product_data['product_id'])
+            else:
+                raise ValueError(f"Unknown shop action: {action}")
+                
+        except Exception as e:
+            logger.error(f"Failed to manage Facebook shop: {e}")
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message=str(e)
+            )
+
+    async def _create_shop_product(self, product_data: Dict[str, Any]) -> PublishResult:
+        """Create a Facebook Shop product"""
+        try:
+            # Get catalog ID first
+            catalog_id = await self._get_or_create_catalog()
+            
+            fb_product_data = {
+                'name': product_data['name'],
+                'description': product_data['description'],
+                'price': f"{int(product_data['price'] * 100)} USD",  # Facebook expects cents
+                'currency': product_data.get('currency', 'USD'),
+                'availability': product_data.get('availability', 'in stock'),
+                'condition': product_data.get('condition', 'new'),
+                'url': product_data.get('product_url', ''),
+                'image_url': product_data.get('image_url', ''),
+                'access_token': self._access_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{catalog_id}/products"
+                
+                async with session.post(url, data=fb_product_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        product_id = result['id']
+                        
+                        return PublishResult(
+                            platform="facebook",
+                            post_id=product_id,
+                            url=f"https://www.facebook.com/commerce/products/{product_id}",
+                            status=PublishStatus.SUCCESS,
+                            metadata={
+                                'product_id': product_id,
+                                'catalog_id': catalog_id,
+                                'product_type': 'facebook_shop_product'
+                            }
+                        )
+                    else:
+                        error = await response.text()
+                        raise Exception(f"Product creation failed: {error}")
+                        
+        except Exception as e:
+            logger.error(f"Failed to create shop product: {e}")
+            raise
+
+    async def _get_or_create_catalog(self) -> str:
+        """Get or create a Facebook product catalog"""
+        try:
+            # Try to get existing catalog
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{self.page_data['page_id']}/owned_product_catalogs"
+                params = {'access_token': self._access_token}
+                
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('data'):
+                            return result['data'][0]['id']
+            
+            # Create new catalog if none exists
+            catalog_data = {
+                'name': f"{self.page_data['page_name']} Catalog",
+                'vertical': 'commerce',
+                'access_token': self._access_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{self.page_data['page_id']}/product_catalogs"
+                
+                async with session.post(url, data=catalog_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result['id']
+                    else:
+                        raise Exception("Failed to create product catalog")
+                        
+        except Exception as e:
+            logger.error(f"Failed to get/create catalog: {e}")
+            raise
+
+    # Live Video Streaming
+    async def post_live_video(self, video_stream: str, metadata: Dict[str, Any]) -> PublishResult:
+        """Start live video broadcast"""
+        if not self._authenticated:
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message="Not authenticated"
+            )
+        
+        try:
+            # Create live video
+            live_video_data = {
+                'title': metadata.get('title', 'Live Video'),
+                'description': metadata.get('description', ''),
+                'privacy': metadata.get('privacy', 'PUBLIC'),
+                'planned_start_time': metadata.get('planned_start_time'),
+                'access_token': self._access_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{self.page_data['page_id']}/live_videos"
+                
+                async with session.post(url, data=live_video_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        live_video_id = result['id']
+                        stream_url = result['stream_url']
+                        
+                        # Start streaming (this would integrate with streaming service)
+                        await self._start_live_stream(stream_url, video_stream)
+                        
+                        return PublishResult(
+                            platform="facebook",
+                            post_id=live_video_id,
+                            url=f"https://www.facebook.com/{self.page_data['page_id']}/videos/{live_video_id}",
+                            status=PublishStatus.SUCCESS,
+                            metadata={
+                                'live_video_id': live_video_id,
+                                'stream_url': stream_url,
+                                'video_type': 'live_stream'
+                            }
+                        )
+                    else:
+                        error = await response.text()
+                        raise Exception(f"Live video creation failed: {error}")
+                        
+        except Exception as e:
+            logger.error(f"Failed to start live video: {e}")
+            return PublishResult(
+                platform="facebook",
+                post_id=None,
+                url=None,
+                status=PublishStatus.FAILED,
+                error_message=str(e)
+            )
+
+    async def _start_live_stream(self, stream_url: str, video_source: str):
+        """Start the actual live stream (integrate with streaming service)"""
+        # This would integrate with streaming services like FFmpeg, OBS, etc.
+        # For now, just log the stream initiation
+        logger.info(f"Starting live stream to {stream_url} from source {video_source}")
+        
+        # In production, this would:
+        # 1. Configure streaming software
+        # 2. Start video capture/encoding
+        # 3. Stream to Facebook's RTMP endpoint
+        # 4. Monitor stream health
+        pass
+
+    # Enhanced OAuth 2.0 Authentication
+    async def get_oauth_url(self, redirect_uri: str, scope: str = None) -> str:
+        """Get Facebook OAuth authorization URL"""
+        if not scope:
+            scope = "pages_manage_posts,pages_read_engagement,pages_show_list,instagram_basic,instagram_content_publish"
+        
+        params = {
+            'client_id': self.app_id,
+            'redirect_uri': redirect_uri,
+            'scope': scope,
+            'response_type': 'code',
+            'state': str(uuid.uuid4())  # CSRF protection
+        }
+        
+        return f"{self.OAUTH_URL}?" + urlencode(params)
+
+    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> Dict[str, Any]:
+        """Exchange authorization code for access token"""
+        try:
+            token_data = {
+                'client_id': self.app_id,
+                'client_secret': self.app_secret,
+                'redirect_uri': redirect_uri,
+                'code': code
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/oauth/access_token"
+                
+                async with session.post(url, data=token_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        access_token = result['access_token']
+                        
+                        # Get long-lived token
+                        long_lived_token = await self._get_long_lived_token(access_token)
+                        
+                        # Get user pages
+                        pages = await self._get_user_pages(long_lived_token)
+                        
+                        return {
+                            'access_token': long_lived_token,
+                            'token_type': 'bearer',
+                            'expires_in': result.get('expires_in'),
+                            'pages': pages,
+                            'success': True
+                        }
+                    else:
+                        error = await response.text()
+                        return {'success': False, 'error': error}
+                        
+        except Exception as e:
+            logger.error(f"Failed to exchange code for token: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _get_long_lived_token(self, short_token: str) -> str:
+        """Convert short-lived token to long-lived token"""
+        try:
+            params = {
+                'grant_type': 'fb_exchange_token',
+                'client_id': self.app_id,
+                'client_secret': self.app_secret,
+                'fb_exchange_token': short_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/oauth/access_token"
+                
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result['access_token']
+                    else:
+                        logger.warning("Failed to get long-lived token, using short-lived")
+                        return short_token
+                        
+        except Exception as e:
+            logger.error(f"Failed to get long-lived token: {e}")
+            return short_token
+
+    async def _get_user_pages(self, access_token: str) -> List[Dict[str, Any]]:
+        """Get user's Facebook pages"""
+        try:
+            params = {
+                'access_token': access_token,
+                'fields': 'id,name,access_token,instagram_business_account,category'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/me/accounts"
+                
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result.get('data', [])
+                    else:
+                        return []
+                        
+        except Exception as e:
+            logger.error(f"Failed to get user pages: {e}")
+            return []
+
+    # Advanced Analytics Integration
+    async def get_page_insights(self, page_id: str, metrics: List[str], period: str = "day") -> Dict[str, Any]:
+        """Get Facebook page analytics"""
+        try:
+            if not metrics:
+                metrics = [
+                    'page_fans',
+                    'page_impressions',
+                    'page_engaged_users',
+                    'page_post_engagements',
+                    'page_video_views'
+                ]
+            
+            params = {
+                'metric': ','.join(metrics),
+                'period': period,
+                'access_token': self._access_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{page_id}/insights"
+                
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        # Process insights data
+                        insights = {}
+                        for insight in result.get('data', []):
+                            metric_name = insight['name']
+                            values = insight.get('values', [])
+                            if values:
+                                insights[metric_name] = values[-1]['value']  # Latest value
+                        
+                        return insights
+                    else:
+                        logger.error(f"Failed to get page insights: {await response.text()}")
+                        return {}
+                        
+        except Exception as e:
+            logger.error(f"Failed to get page insights: {e}")
+            return {}
+
+    async def get_post_analytics(self, post_id: str) -> Dict[str, Any]:
+        """Get detailed post performance metrics"""
+        try:
+            metrics = [
+                'post_impressions',
+                'post_engaged_users',
+                'post_negative_feedback',
+                'post_clicks',
+                'post_reactions_by_type_total'
+            ]
+            
+            params = {
+                'metric': ','.join(metrics),
+                'access_token': self._access_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{post_id}/insights"
+                
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        # Process post insights
+                        analytics = {}
+                        for insight in result.get('data', []):
+                            metric_name = insight['name']
+                            values = insight.get('values', [])
+                            if values:
+                                analytics[metric_name] = values[0]['value']
+                        
+                        # Calculate engagement rate
+                        impressions = analytics.get('post_impressions', 1)
+                        engaged_users = analytics.get('post_engaged_users', 0)
+                        analytics['engagement_rate'] = (engaged_users / impressions * 100) if impressions > 0 else 0
+                        
+                        return analytics
+                    else:
+                        logger.error(f"Failed to get post analytics: {await response.text()}")
+                        return {}
+                        
+        except Exception as e:
+            logger.error(f"Failed to get post analytics: {e}")
+            return {}
+
+    async def get_audience_demographics(self, page_id: str) -> Dict[str, Any]:
+        """Get page audience demographics"""
+        try:
+            demographic_metrics = [
+                'page_fans_gender_age',
+                'page_fans_country',
+                'page_fans_city'
+            ]
+            
+            params = {
+                'metric': ','.join(demographic_metrics),
+                'period': 'lifetime',
+                'access_token': self._access_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.GRAPH_API_URL}/{page_id}/insights"
+                
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        demographics = {}
+                        for insight in result.get('data', []):
+                            metric_name = insight['name']
+                            values = insight.get('values', [])
+                            if values:
+                                demographics[metric_name] = values[-1]['value']
+                        
+                        return demographics
+                    else:
+                        logger.error(f"Failed to get demographics: {await response.text()}")
+                        return {}
+                        
+        except Exception as e:
+            logger.error(f"Failed to get audience demographics: {e}")
+            return {}
