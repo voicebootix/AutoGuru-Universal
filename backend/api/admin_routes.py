@@ -234,7 +234,7 @@ async def store_platform_credential(
             credential_value=credential_data.credential_value,
             admin_id=admin_user["id"],
             expires_at=credential_data.expires_at,
-            metadata=credential_data.metadata
+            metadata=credential_data.extra_data
         )
         
         return {

@@ -82,7 +82,7 @@ class PlatformCredentials(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
     status = Column(String(20), default=CredentialStatus.ACTIVE.value)
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
     created_by = Column(String(100), nullable=False)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -94,7 +94,7 @@ class PlatformCredentials(Base):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "metadata": self.metadata
+            "extra_data": self.extra_data
         }
 
 
@@ -111,7 +111,7 @@ class AdminUser(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     permissions = Column(JSON, default=list)
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -165,7 +165,7 @@ class APIConnectionLog(Base):
     error_message = Column(Text, nullable=True)
     tested_at = Column(DateTime, default=datetime.utcnow)
     tested_by = Column(String(100), nullable=False)
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -176,7 +176,7 @@ class APIConnectionLog(Base):
             "error_message": self.error_message,
             "tested_at": self.tested_at.isoformat(),
             "tested_by": self.tested_by,
-            "metadata": self.metadata
+            "extra_data": self.extra_data
         }
 
 
@@ -196,7 +196,7 @@ class UserPlatformConnection(Base):
     connected_at = Column(DateTime, default=datetime.utcnow)
     last_used_at = Column(DateTime, nullable=True)
     permissions = Column(JSON, default=list)
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -219,7 +219,7 @@ class PlatformCredentialCreate(BaseModel):
     credential_name: str = Field(..., min_length=1, max_length=100)
     credential_value: str = Field(..., min_length=1)
     expires_at: Optional[datetime] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_data: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PlatformCredentialUpdate(BaseModel):
@@ -227,7 +227,7 @@ class PlatformCredentialUpdate(BaseModel):
     credential_value: Optional[str] = None
     expires_at: Optional[datetime] = None
     status: Optional[CredentialStatus] = None
-    metadata: Optional[Dict[str, Any]] = None
+    extra_data: Optional[Dict[str, Any]] = None
 
 
 class AdminUserCreate(BaseModel):
@@ -282,7 +282,7 @@ class PlatformConfiguration:
     permissions: List[str] = field(default_factory=list)
     rate_limits: Dict[str, int] = field(default_factory=dict)
     endpoints: Dict[str, str] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    extra_data: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -294,7 +294,7 @@ class PlatformConfiguration:
             "permissions": self.permissions,
             "rate_limits": self.rate_limits,
             "endpoints": self.endpoints,
-            "metadata": self.metadata
+            "extra_data": self.extra_data
         }
 
 
@@ -308,7 +308,7 @@ class AIServiceConfiguration:
     usage_limits: Dict[str, int] = field(default_factory=dict)
     cost_tracking: Dict[str, float] = field(default_factory=dict)
     endpoints: Dict[str, str] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    extra_data: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -319,7 +319,7 @@ class AIServiceConfiguration:
             "usage_limits": self.usage_limits,
             "cost_tracking": self.cost_tracking,
             "endpoints": self.endpoints,
-            "metadata": self.metadata
+            "extra_data": self.extra_data
         }
 
 

@@ -117,7 +117,7 @@ class CredentialManager:
         await session.execute(
             """
             INSERT INTO platform_credentials 
-            (id, platform_type, credential_name, encrypted_value, created_by, expires_at, metadata)
+            (id, platform_type, credential_name, encrypted_value, created_by, expires_at, extra_data)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
@@ -143,7 +143,7 @@ class CredentialManager:
         result = await session.execute(
             """
             UPDATE platform_credentials 
-            SET encrypted_value = %s, updated_at = %s, expires_at = %s, metadata = %s
+            SET encrypted_value = %s, updated_at = %s, expires_at = %s, extra_data = %s
             WHERE platform_type = %s AND credential_name = %s
             RETURNING id
             """,
@@ -500,7 +500,7 @@ class CredentialManager:
                 await session.execute(
                     """
                     INSERT INTO api_connection_logs 
-                    (platform_type, connection_status, response_time_ms, error_message, tested_by, metadata)
+                    (platform_type, connection_status, response_time_ms, error_message, tested_by, extra_data)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     (
