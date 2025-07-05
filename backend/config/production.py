@@ -194,5 +194,5 @@ def get_production_settings() -> ProductionSettings:
         max_analysis_tokens=int(os.getenv("MAX_ANALYSIS_TOKENS", "500"))
     )
 
-# Global settings instance
-production_settings = get_production_settings() 
+# Global settings instance - removed to prevent import errors
+# Use get_production_settings() function instead
