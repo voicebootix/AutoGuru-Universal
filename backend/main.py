@@ -781,21 +781,9 @@ async def get_business_raw_data():
             "currency": "USD"
         }
         
-        # Subscription metrics (mock data structure)
-        subscription_metrics = {
-            "total_subscriptions": 0,
-            "active_subscriptions": 0,
-            "subscription_tiers": {
-                "basic": 0,
-                "professional": 0,
-                "enterprise": 0
-            },
-            "revenue_metrics": {
-                "monthly_recurring_revenue": 0.0,
-                "annual_recurring_revenue": 0.0,
-                "average_revenue_per_user": 0.0
-            }
-        }
+        # Get real subscription metrics from database
+        async with get_db_context() as db:
+            subscription_metrics = await _get_real_subscription_metrics(db)
         
         # Content generation statistics
         content_stats = {
@@ -1569,6 +1557,79 @@ def support():
     support_email = os.getenv("SUPPORT_EMAIL", "support@autoguru.com")
     support_url = os.getenv("SUPPORT_URL", "https://autoguru.com/support")
     return {"email": support_email, "url": support_url}
+
+# Helper method for getting real subscription metrics
+async def _get_real_subscription_metrics(db) -> Dict[str, Any]:
+    """Get real subscription metrics from database"""
+    try:
+        # Query subscription data from database
+        subscription_query = """
+            SELECT 
+                COUNT(*) as total_subscriptions,
+                COUNT(CASE WHEN status = 'active' THEN 1 END) as active_subscriptions,
+                COUNT(CASE WHEN tier = 'basic' AND status = 'active' THEN 1 END) as basic_tier,
+                COUNT(CASE WHEN tier = 'professional' AND status = 'active' THEN 1 END) as professional_tier,
+                COUNT(CASE WHEN tier = 'enterprise' AND status = 'active' THEN 1 END) as enterprise_tier,
+                SUM(CASE WHEN status = 'active' THEN monthly_amount ELSE 0 END) as mrr,
+                SUM(CASE WHEN status = 'active' THEN monthly_amount * 12 ELSE 0 END) as arr
+            FROM subscriptions 
+            WHERE created_at >= NOW() - INTERVAL '1 year'
+        """
+        
+        result = await db.fetch(subscription_query)
+        
+        if result:
+            row = result[0]
+            total_subs = row['active_subscriptions'] or 0
+            mrr = float(row['mrr'] or 0)
+            
+            return {
+                "total_subscriptions": int(row['total_subscriptions'] or 0),
+                "active_subscriptions": total_subs,
+                "subscription_tiers": {
+                    "basic": int(row['basic_tier'] or 0),
+                    "professional": int(row['professional_tier'] or 0),
+                    "enterprise": int(row['enterprise_tier'] or 0)
+                },
+                "revenue_metrics": {
+                    "monthly_recurring_revenue": mrr,
+                    "annual_recurring_revenue": float(row['arr'] or 0),
+                    "average_revenue_per_user": mrr / total_subs if total_subs > 0 else 0.0
+                }
+            }
+        else:
+            # Return empty structure if no data
+            return {
+                "total_subscriptions": 0,
+                "active_subscriptions": 0,
+                "subscription_tiers": {
+                    "basic": 0,
+                    "professional": 0,
+                    "enterprise": 0
+                },
+                "revenue_metrics": {
+                    "monthly_recurring_revenue": 0.0,
+                    "annual_recurring_revenue": 0.0,
+                    "average_revenue_per_user": 0.0
+                }
+            }
+    except Exception as e:
+        logger.error(f"Failed to get subscription metrics: {str(e)}")
+        # Return safe defaults on error
+        return {
+            "total_subscriptions": 0,
+            "active_subscriptions": 0,
+            "subscription_tiers": {
+                "basic": 0,
+                "professional": 0,
+                "enterprise": 0
+            },
+            "revenue_metrics": {
+                "monthly_recurring_revenue": 0.0,
+                "annual_recurring_revenue": 0.0,
+                "average_revenue_per_user": 0.0
+            }
+        }
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
