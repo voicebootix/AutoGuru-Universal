@@ -9,6 +9,9 @@ import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import LinkIcon from '@mui/icons-material/Link';
 
+// Import actual components instead of using placeholders
+import Dashboard from './features/dashboard/Dashboard';
+
 const drawerWidth = 220;
 
 const navItems = [
@@ -21,8 +24,16 @@ const navItems = [
   { text: 'Support', icon: <SupportAgentIcon />, path: '/support' },
 ];
 
+// Temporary placeholder for components not yet implemented
 function Placeholder({ title }) {
-  return <Box p={4}><Typography variant="h4">{title}</Typography><Typography variant="body1">Coming soon...</Typography></Box>;
+  return (
+    <Box p={4}>
+      <Typography variant="h4" gutterBottom>{title}</Typography>
+      <Typography variant="body1" color="textSecondary">
+        This feature is being implemented. Dashboard is now functional!
+      </Typography>
+    </Box>
+  );
 }
 
 export default function App() {
@@ -61,8 +72,8 @@ export default function App() {
           <Toolbar />
           <Container maxWidth="xl">
             <Routes>
-              <Route path="/" element={<Placeholder title="Dashboard" />} />
-              <Route path="/analytics" element={<Placeholder title="Analytics" />} />
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/analytics" element={<Placeholder title="Analytics Dashboard" />} />
               <Route path="/content" element={<Placeholder title="Content Creation & Scheduling" />} />
               <Route path="/platforms" element={<Placeholder title="Platform Management" />} />
               <Route path="/tasks" element={<Placeholder title="Background Tasks" />} />
