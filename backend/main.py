@@ -304,6 +304,36 @@ class ApprovePricingRequest(BaseModel):
         }
 
 
+class LoginRequest(BaseModel):
+    """Request model for login"""
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "demo@autoguru.com",
+                "password": "demo123"
+            }
+        }
+
+class LoginResponse(BaseModel):
+    """Response model for login"""
+    token: str
+    user_id: str
+    email: str
+    message: str = "Login successful"
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "token": "demo_token_1234567890",
+                "user_id": "user_123",
+                "email": "demo@autoguru.com",
+                "message": "Login successful"
+            }
+        }
+
 # Middleware
 class RequestIdMiddleware(BaseHTTPMiddleware):
     """Middleware to add request ID for tracking (class-based for Starlette/FastAPI)"""
@@ -351,9 +381,22 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # In production, you would verify the JWT token here
-    # For now, we'll accept any token for development
-    return credentials.credentials
+    try:
+        # Demo token verification - accept any token that starts with 'demo_token_'
+        token = credentials.credentials
+        if token.startswith('demo_token_'):
+            return token
+        
+        # TODO: Implement proper JWT verification for production
+        # For now, just return the token as user ID
+        return token
+    except Exception as e:
+        logger.error(f"Token verification failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 # Application lifespan
@@ -1557,6 +1600,51 @@ def support():
     support_email = os.getenv("SUPPORT_EMAIL", "support@autoguru.com")
     support_url = os.getenv("SUPPORT_URL", "https://autoguru.com/support")
     return {"email": support_email, "url": support_url}
+
+@app.post(
+    "/auth/login",
+    response_model=LoginResponse,
+    tags=["Authentication"],
+    summary="User login"
+)
+async def login(request: LoginRequest):
+    """Demo login endpoint - accepts any credentials"""
+    try:
+        # Demo authentication - accept any email/password
+        demo_token = f"demo_token_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        user_id = f"user_{uuid.uuid4().hex[:8]}"
+        
+        logger.info(f"Demo login successful for email: {request.email}")
+        
+        return LoginResponse(
+            token=demo_token,
+            user_id=user_id,
+            email=request.email,
+            message="Demo login successful"
+        )
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed"
+        )
+
+@app.post(
+    "/auth/logout",
+    tags=["Authentication"],
+    summary="User logout"
+)
+async def logout():
+    """Demo logout endpoint"""
+    try:
+        logger.info("Demo logout successful")
+        return {"message": "Logout successful"}
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed"
+        )
 
 # Helper method for getting real subscription metrics
 async def _get_real_subscription_metrics(db) -> Dict[str, Any]:
