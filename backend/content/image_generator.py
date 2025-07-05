@@ -464,8 +464,7 @@ class AIImageGenerationEngine(UniversalContentCreator):
         
         # Apply brand colors if specified
         if 'colors' in brand_guidelines:
-            # This would apply color grading to match brand colors
-            pass
+            result_image = await self._apply_brand_styling(result_image, brand_guidelines)
             
         # Apply watermark if specified
         if brand_guidelines.get('watermark'):
@@ -481,6 +480,219 @@ class AIImageGenerationEngine(UniversalContentCreator):
         """Apply watermark to image"""
         # This is a placeholder - would integrate with actual watermark assets
         return image
+    
+    async def _apply_brand_styling(self, image: Image.Image, brand_guidelines: Dict[str, Any]) -> Image.Image:
+        """Apply brand color styling to match brand guidelines"""
+        try:
+            result_image = image.copy().convert('RGB')
+            brand_colors = brand_guidelines.get('colors', {})
+            
+            if not brand_colors:
+                return result_image
+            
+            # Get primary and secondary brand colors
+            primary_color = brand_colors.get('primary', '#000000')
+            secondary_color = brand_colors.get('secondary', primary_color)
+            accent_color = brand_colors.get('accent', primary_color)
+            
+            # Convert hex colors to RGB tuples
+            def hex_to_rgb(hex_color):
+                hex_color = hex_color.lstrip('#')
+                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            
+            primary_rgb = hex_to_rgb(primary_color)
+            secondary_rgb = hex_to_rgb(secondary_color)
+            
+            # Apply color grading based on business niche
+            business_niche = brand_guidelines.get('business_niche', 'general')
+            
+            if business_niche == 'education':
+                # Apply warm, trustworthy color grading
+                result_image = await self._apply_color_overlay(result_image, primary_rgb, 0.15)
+            elif business_niche == 'fitness':
+                # Apply energetic, vibrant color grading
+                result_image = await self._apply_color_overlay(result_image, primary_rgb, 0.2)
+                result_image = await self._enhance_vibrancy(result_image, 1.1)
+            elif business_niche == 'business_consulting':
+                # Apply professional, sophisticated color grading
+                result_image = await self._apply_color_overlay(result_image, primary_rgb, 0.1)
+                result_image = await self._adjust_contrast_professionally(result_image)
+            elif business_niche == 'creative_arts':
+                # Apply artistic, expressive color grading
+                result_image = await self._apply_artistic_color_grading(result_image, primary_rgb, secondary_rgb)
+            else:
+                # Default brand color overlay
+                result_image = await self._apply_color_overlay(result_image, primary_rgb, 0.12)
+            
+            # Apply brand-specific adjustments
+            if brand_guidelines.get('style') == 'modern':
+                result_image = await self._apply_modern_styling(result_image)
+            elif brand_guidelines.get('style') == 'vintage':
+                result_image = await self._apply_vintage_styling(result_image)
+            
+            return result_image
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply brand styling: {str(e)}")
+            return image
+    
+    async def _apply_color_overlay(self, image: Image.Image, color_rgb: tuple, opacity: float) -> Image.Image:
+        """Apply color overlay to image"""
+        if not ImageDraw:
+            return image
+        
+        overlay = Image.new('RGBA', image.size, color_rgb + (int(255 * opacity),))
+        result = image.convert('RGBA')
+        result = Image.alpha_composite(result, overlay)
+        return result.convert('RGB')
+    
+    async def _enhance_vibrancy(self, image: Image.Image, factor: float) -> Image.Image:
+        """Enhance image vibrancy for fitness/energetic brands"""
+        if not ImageEnhance:
+            return image
+        
+        enhancer = ImageEnhance.Color(image)
+        return enhancer.enhance(factor)
+    
+    async def _adjust_contrast_professionally(self, image: Image.Image) -> Image.Image:
+        """Apply professional contrast adjustments"""
+        if not ImageEnhance:
+            return image
+        
+        # Subtle contrast increase for professional look
+        contrast_enhancer = ImageEnhance.Contrast(image)
+        result = contrast_enhancer.enhance(1.08)
+        
+        # Slight brightness adjustment
+        brightness_enhancer = ImageEnhance.Brightness(result)
+        result = brightness_enhancer.enhance(1.02)
+        
+        return result
+    
+    async def _apply_artistic_color_grading(self, image: Image.Image, primary_rgb: tuple, secondary_rgb: tuple) -> Image.Image:
+        """Apply artistic color grading for creative businesses"""
+        if not ImageDraw:
+            return image
+        
+        # Create dual-color gradient overlay
+        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        
+        # Apply gradient from primary to secondary color
+        width, height = image.size
+        for y in range(height):
+            # Calculate color interpolation
+            ratio = y / height
+            r = int(primary_rgb[0] * (1 - ratio) + secondary_rgb[0] * ratio)
+            g = int(primary_rgb[1] * (1 - ratio) + secondary_rgb[1] * ratio)
+            b = int(primary_rgb[2] * (1 - ratio) + secondary_rgb[2] * ratio)
+            
+            # Draw line with interpolated color
+            draw.line([(0, y), (width, y)], fill=(r, g, b, 30))
+        
+        result = image.convert('RGBA')
+        result = Image.alpha_composite(result, overlay)
+        return result.convert('RGB')
+    
+    async def _apply_modern_styling(self, image: Image.Image) -> Image.Image:
+        """Apply modern styling effects"""
+        if not ImageEnhance:
+            return image
+        
+        # Increase contrast and reduce saturation for modern look
+        contrast_enhancer = ImageEnhance.Contrast(image)
+        result = contrast_enhancer.enhance(1.15)
+        
+        color_enhancer = ImageEnhance.Color(result)
+        result = color_enhancer.enhance(0.9)
+        
+        return result
+    
+    async def _apply_vintage_styling(self, image: Image.Image) -> Image.Image:
+        """Apply vintage styling effects"""
+        if not ImageEnhance:
+            return image
+        
+        # Reduce contrast and add warmth for vintage look
+        contrast_enhancer = ImageEnhance.Contrast(image)
+        result = contrast_enhancer.enhance(0.9)
+        
+        # Add warm color overlay
+        warm_overlay = await self._apply_color_overlay(result, (255, 230, 200), 0.1)
+        
+        return warm_overlay
+    
+    async def _generate_variations(self, base_image: Image.Image, count: int) -> List[Image.Image]:
+        """Generate multiple variations of the base image for A/B testing"""
+        variations = [base_image]  # Include original
+        
+        try:
+            for i in range(count - 1):
+                variation = base_image.copy()
+                
+                # Apply different variation techniques
+                variation_type = i % 4
+                
+                if variation_type == 0:
+                    # Color variation
+                    variation = await self._create_color_variation(variation)
+                elif variation_type == 1:
+                    # Brightness/contrast variation
+                    variation = await self._create_brightness_variation(variation)
+                elif variation_type == 2:
+                    # Saturation variation
+                    variation = await self._create_saturation_variation(variation)
+                elif variation_type == 3:
+                    # Filter variation
+                    variation = await self._create_filter_variation(variation)
+                
+                variations.append(variation)
+            
+            return variations
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate variations: {str(e)}")
+            return [base_image]
+    
+    async def _create_color_variation(self, image: Image.Image) -> Image.Image:
+        """Create color-shifted variation"""
+        if not ImageEnhance:
+            return image
+        
+        # Slight color enhancement
+        enhancer = ImageEnhance.Color(image)
+        return enhancer.enhance(1.15)
+    
+    async def _create_brightness_variation(self, image: Image.Image) -> Image.Image:
+        """Create brightness-adjusted variation"""
+        if not ImageEnhance:
+            return image
+        
+        # Slight brightness increase
+        brightness_enhancer = ImageEnhance.Brightness(image)
+        brighter = brightness_enhancer.enhance(1.1)
+        
+        # Slight contrast increase to maintain quality
+        contrast_enhancer = ImageEnhance.Contrast(brighter)
+        return contrast_enhancer.enhance(1.05)
+    
+    async def _create_saturation_variation(self, image: Image.Image) -> Image.Image:
+        """Create saturation-adjusted variation"""
+        if not ImageEnhance:
+            return image
+        
+        # Reduce saturation for a more muted look
+        enhancer = ImageEnhance.Color(image)
+        return enhancer.enhance(0.85)
+    
+    async def _create_filter_variation(self, image: Image.Image) -> Image.Image:
+        """Create filter-based variation"""
+        if not ImageFilter:
+            return image
+        
+        # Apply subtle blur and sharpen for different feel
+        blurred = image.filter(ImageFilter.GaussianBlur(radius=0.5))
+        return blurred.filter(ImageFilter.UnsharpMask(radius=1, percent=120, threshold=2))
     
     async def apply_brand_frame(self, image: Image.Image, brand_guidelines: Dict[str, Any]) -> Image.Image:
         """Apply brand frame to image"""

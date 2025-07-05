@@ -495,7 +495,7 @@ class CopyGenerationOptimizer(UniversalContentCreator):
         
         return best_copy
     
-    async def create_platform_copy_versions(self, copy: Dict[str, Any], platform_requirements: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    async def create_platform_copy_versions(self, copy: Dict[str, Any], platform_requirements: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """Create platform-specific copy versions"""
         platform_versions = {}
         
@@ -897,5 +897,497 @@ class CopyGenerationOptimizer(UniversalContentCreator):
             
         suggestions.append("Test different CTA variations for higher conversion")
         suggestions.append("Consider adding specific numbers or statistics for credibility")
+        
+        return suggestions
+
+class CopyOptimizer(UniversalContentCreator):
+    """
+    AI-powered copy optimization engine for universal business automation.
+    
+    This class provides a simplified interface for copy generation and optimization
+    that works universally across any business niche.
+    """
+    
+    def __init__(self, client_id: str):
+        super().__init__(client_id, "copy_optimizer")
+        self.copy_formulas = {
+            'AIDA': self._aida_formula,
+            'PAS': self._pas_formula,
+            'BAB': self._bab_formula,
+            'PASTOR': self._pastor_formula,
+            'FAB': self._fab_formula
+        }
+        self.power_words_db = self._load_power_words()
+    
+    def _load_power_words(self) -> Dict[str, List[str]]:
+        """Load power words database for different business niches"""
+        return {
+            'universal': ['transform', 'breakthrough', 'revolutionary', 'proven', 'exclusive'],
+            'education': ['learn', 'master', 'discover', 'unlock', 'achieve'],
+            'fitness': ['energize', 'sculpt', 'powerful', 'strong', 'fit'],
+            'business_consulting': ['strategic', 'optimize', 'accelerate', 'maximize', 'leverage'],
+            'creative_arts': ['inspire', 'create', 'express', 'unique', 'artistic'],
+            'ecommerce': ['premium', 'quality', 'authentic', 'guaranteed', 'bestselling'],
+            'local_service': ['reliable', 'trusted', 'professional', 'experienced', 'local'],
+            'technology': ['innovative', 'cutting-edge', 'advanced', 'smart', 'automated'],
+            'non_profit': ['impact', 'compassionate', 'meaningful', 'community', 'change']
+        }
+    
+    async def create_content(self, request: CreativeRequest) -> CreativeAsset:
+        """Create optimized copy content for any business niche"""
+        try:
+            logger.info(f"Starting copy optimization for request {request.request_id}")
+            
+            # 1. Detect optimal copy strategy
+            strategy = await self._detect_copy_strategy(request)
+            
+            # 2. Generate copy using optimal formula
+            optimized_copy = await self.generate_copy(request, strategy)
+            
+            # 3. Create platform-specific versions
+            platform_versions = await self.create_platform_versions(optimized_copy, request.platform_requirements)
+            
+            # 4. Save and return asset
+            asset = await self.save_copy_asset(optimized_copy, platform_versions, request)
+            
+            logger.info(f"Successfully created copy asset {asset.asset_id}")
+            return asset
+            
+        except Exception as e:
+            await self.log_creation_error(f"Copy optimization failed: {str(e)}")
+            raise ContentCreationError(f"Failed to optimize copy: {str(e)}")
+    
+    async def generate_copy(self, request: CreativeRequest, strategy: str) -> Dict[str, Any]:
+        """Generate optimized copy using AI-driven formulas"""
+        
+        # Use AI service to generate base copy
+        ai_generated = await self.ai_service.generate_ad_copy(
+            approach=strategy.lower(),
+            business_niche=request.business_niche,
+            target_audience=request.target_audience,
+            creative_brief=request.creative_brief,
+            psychological_triggers=['trust', 'urgency', 'scarcity'],
+            platform_requirements=request.platform_requirements
+        )
+        
+        # Apply copy formula structure
+        formula_func = self.copy_formulas.get(strategy, self._aida_formula)
+        structured_copy = await formula_func(request, ai_generated)
+        
+        # Optimize with power words
+        optimized_copy = await self._inject_power_words(structured_copy, request.business_niche)
+        
+        # Optimize for readability
+        final_copy = await self._optimize_readability(optimized_copy)
+        
+        return final_copy
+    
+    async def _detect_copy_strategy(self, request: CreativeRequest) -> str:
+        """AI-driven detection of optimal copy strategy for business niche"""
+        
+        # Analyze creative brief for intent signals (simplified version)
+        brief_lower = request.creative_brief.lower()
+        intent_signals = []
+        
+        if any(word in brief_lower for word in ['urgent', 'now', 'today', 'limited']):
+            intent_signals.append('urgency')
+        if any(word in brief_lower for word in ['trust', 'reliable', 'proven', 'guaranteed']):
+            intent_signals.append('trust')
+        if any(word in brief_lower for word in ['transform', 'change', 'improve', 'better']):
+            intent_signals.append('transformation')
+        
+        brief_analysis = {'intent_signals': intent_signals}
+        
+        # Map business niche to optimal strategies
+        niche_strategies = {
+            'education': 'FAB',  # Features, Advantages, Benefits
+            'fitness': 'BAB',    # Before, After, Bridge
+            'business_consulting': 'PASTOR',  # Problem, Amplify, Story, Transform, Offer, Response
+            'creative_arts': 'PAS',  # Problem, Agitate, Solution
+            'ecommerce': 'AIDA',    # Attention, Interest, Desire, Action
+            'local_service': 'PAS', # Problem, Agitate, Solution
+            'technology': 'FAB',    # Features, Advantages, Benefits
+            'non_profit': 'PASTOR'  # Problem, Amplify, Story, Transform, Offer, Response
+        }
+        
+        # Primary strategy based on niche
+        primary_strategy = niche_strategies.get(request.business_niche, 'AIDA')
+        
+        # Adjust based on creative brief intent
+        if 'urgency' in brief_analysis.get('intent_signals', []):
+            return 'AIDA'
+        elif 'trust' in brief_analysis.get('intent_signals', []):
+            return 'PASTOR'
+        elif 'transformation' in brief_analysis.get('intent_signals', []):
+            return 'BAB'
+        
+        return primary_strategy
+    
+    async def _aida_formula(self, request: CreativeRequest, ai_content: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply AIDA (Attention, Interest, Desire, Action) formula"""
+        return {
+            'attention': ai_content.get('headline', f"Attention {request.business_niche} Professionals!"),
+            'interest': f"Discover how to revolutionize your {request.business_niche} approach",
+            'desire': f"Join thousands who have transformed their {request.business_niche} success",
+            'action': ai_content.get('cta', 'Get Started Today'),
+            'headline': ai_content.get('headline', f"Transform Your {request.business_niche.title()} Results"),
+            'body_copy': ai_content.get('body', f"Revolutionary {request.business_niche} solution that delivers proven results."),
+            'formula_used': 'AIDA'
+        }
+    
+    async def _pas_formula(self, request: CreativeRequest, ai_content: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply PAS (Problem, Agitate, Solution) formula"""
+        return {
+            'problem': f"Struggling with {request.business_niche} challenges?",
+            'agitate': "You're not alone. Many professionals face the same frustrating obstacles daily.",
+            'solution': f"Our proven {request.business_niche} solution eliminates these problems permanently.",
+            'headline': ai_content.get('headline', f"End Your {request.business_niche.title()} Struggles Forever"),
+            'body_copy': ai_content.get('body', f"Stop struggling with {request.business_niche} challenges. Our solution works."),
+            'cta': ai_content.get('cta', 'Solve This Now'),
+            'formula_used': 'PAS'
+        }
+    
+    async def _bab_formula(self, request: CreativeRequest, ai_content: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply BAB (Before, After, Bridge) formula"""
+        return {
+            'before': f"Before: Struggling with {request.business_niche} challenges",
+            'after': f"After: Achieving {request.business_niche} excellence effortlessly",
+            'bridge': f"Our proven system bridges the gap to {request.business_niche} success",
+            'headline': ai_content.get('headline', f"Transform Your {request.business_niche.title()} Journey"),
+            'body_copy': ai_content.get('body', f"See the dramatic before and after transformation in your {request.business_niche}."),
+            'cta': ai_content.get('cta', 'Start Your Transformation'),
+            'formula_used': 'BAB'
+        }
+    
+    async def _pastor_formula(self, request: CreativeRequest, ai_content: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply PASTOR (Problem, Amplify, Story, Transform, Offer, Response) formula"""
+        return {
+            'problem': f"The {request.business_niche} industry has a serious problem",
+            'amplify': "This problem is costing professionals thousands in lost opportunities",
+            'story': f"Here's how one {request.business_niche} professional overcame these exact challenges",
+            'transformation': "The transformation was immediate and dramatic",
+            'offer': f"Now you can access the same {request.business_niche} breakthrough",
+            'response': ai_content.get('cta', 'Claim Your Solution'),
+            'headline': ai_content.get('headline', f"The {request.business_niche.title()} Revolution Starts Here"),
+            'body_copy': ai_content.get('body', f"Discover the transformation story that's changing {request.business_niche} forever."),
+            'formula_used': 'PASTOR'
+        }
+    
+    async def _fab_formula(self, request: CreativeRequest, ai_content: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply FAB (Features, Advantages, Benefits) formula"""
+        return {
+            'features': f"Advanced {request.business_niche} methodology with proven track record",
+            'advantages': f"Faster, more efficient than traditional {request.business_niche} approaches",
+            'benefits': f"Achieve {request.business_niche} excellence while saving time and effort",
+            'headline': ai_content.get('headline', f"Advanced {request.business_niche.title()} Solution"),
+            'body_copy': ai_content.get('body', f"Experience the features, advantages, and benefits of our {request.business_niche} system."),
+            'cta': ai_content.get('cta', 'Discover the Benefits'),
+            'formula_used': 'FAB'
+        }
+    
+    async def _inject_power_words(self, copy: Dict[str, Any], business_niche: str) -> Dict[str, Any]:
+        """Inject niche-specific power words for emotional impact"""
+        niche_words = self.power_words_db.get(business_niche, self.power_words_db['universal'])
+        
+        # Enhance headline with power words
+        headline = copy.get('headline', '')
+        if not any(word in headline.lower() for word in niche_words):
+            copy['headline'] = f"{niche_words[0].title()} {headline}"
+        
+        # Enhance CTA with action words
+        cta = copy.get('cta', '')
+        action_words = ['unlock', 'discover', 'transform', 'achieve']
+        if not any(word in cta.lower() for word in action_words):
+            copy['cta'] = f"{action_words[0].title()} {cta}"
+        
+        copy['power_words_used'] = niche_words[:5]
+        return copy
+    
+    async def _optimize_readability(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize copy for readability and engagement"""
+        body = copy.get('body_copy', '')
+        
+        # Break long sentences
+        sentences = body.split('.')
+        optimized_sentences = []
+        
+        for sentence in sentences:
+            words = sentence.split()
+            if len(words) > 20:
+                # Split into two sentences
+                mid = len(words) // 2
+                optimized_sentences.append(' '.join(words[:mid]) + '.')
+                optimized_sentences.append(' '.join(words[mid:]) + '.')
+            else:
+                optimized_sentences.append(sentence + '.')
+        
+        copy['body_copy'] = ' '.join(optimized_sentences).strip()
+        copy['readability_optimized'] = True
+        
+        return copy
+    
+    async def create_platform_versions(self, copy: Dict[str, Any], platform_requirements: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Create platform-optimized copy versions"""
+        versions = {}
+        
+        for platform in platform_requirements:
+            if platform == 'twitter':
+                versions[platform] = await self._create_twitter_copy(copy)
+            elif platform == 'facebook':
+                versions[platform] = await self._create_facebook_copy(copy)
+            elif platform == 'instagram':
+                versions[platform] = await self._create_instagram_copy(copy)
+            elif platform == 'linkedin':
+                versions[platform] = await self._create_linkedin_copy(copy)
+            elif platform == 'google_ads':
+                versions[platform] = await self._create_google_ads_copy(copy)
+        
+        return versions
+    
+    async def _create_twitter_copy(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Create Twitter-optimized copy (280 character limit)"""
+        headline = copy.get('headline', '')
+        cta = copy.get('cta', '')
+        
+        # Compress to fit Twitter limit
+        tweet = f"{headline} {cta}"
+        if len(tweet) > 280:
+            # Truncate headline but keep CTA
+            max_headline = 280 - len(cta) - 1
+            headline = headline[:max_headline] + "..."
+            tweet = f"{headline} {cta}"
+        
+        return {
+            'tweet': tweet,
+            'character_count': len(tweet),
+            'hashtags': ['#business', '#success', '#growth']
+        }
+    
+    async def _create_facebook_copy(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Create Facebook-optimized copy"""
+        return {
+            'headline': copy.get('headline', '')[:40],  # Facebook headline limit
+            'primary_text': copy.get('body_copy', '')[:125],  # Primary text limit
+            'link_description': copy.get('attention', '')[:30],
+            'cta_button': copy.get('cta', 'Learn More')
+        }
+    
+    async def _create_instagram_copy(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Create Instagram-optimized copy"""
+        caption = f"{copy.get('headline', '')}\n\n{copy.get('body_copy', '')}\n\n{copy.get('cta', '')}"
+        
+        return {
+            'caption': caption[:2200],  # Instagram limit
+            'first_line': copy.get('headline', ''),  # Shows in feed
+            'hashtags': ['#entrepreneur', '#success', '#business'],
+            'cta': copy.get('cta', '')
+        }
+    
+    async def _create_linkedin_copy(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Create LinkedIn-optimized copy"""
+        body = copy.get('body_copy', '')
+        professional_insights = await self._add_professional_context(body)
+        
+        return {
+            'headline': copy.get('headline', ''),
+            'body': professional_insights[:3000],  # LinkedIn limit
+            'cta': copy.get('cta', ''),
+            'professional_tone': True
+        }
+    
+    async def _create_google_ads_copy(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Create Google Ads optimized copy"""
+        return {
+            'headline_1': copy.get('headline', '')[:30],
+            'headline_2': copy.get('attention', '')[:30],
+            'description': copy.get('body_copy', '')[:90],
+            'display_url': 'yoursite.com',
+            'final_url': 'https://yoursite.com'
+        }
+    
+    async def _add_professional_context(self, text: str) -> str:
+        """Add professional insights for LinkedIn"""
+        insights = [
+            "Industry experts agree:",
+            "Recent studies show:",
+            "Professional development insight:",
+            "Strategic business perspective:"
+        ]
+        return f"{insights[0]} {text}"
+    
+    async def save_copy_asset(self, copy_content: Dict[str, Any], platform_versions: Dict[str, Any], request: CreativeRequest) -> CreativeAsset:
+        """Save optimized copy as a CreativeAsset"""
+        asset_id = self.generate_asset_id()
+        
+        # Create asset directory
+        asset_dir = os.path.join('assets', 'copy', asset_id)
+        os.makedirs(asset_dir, exist_ok=True)
+        
+        # Save main copy file
+        main_path = os.path.join(asset_dir, 'optimized_copy.json')
+        with open(main_path, 'w') as f:
+            json.dump(copy_content, f, indent=2)
+        
+        # Save platform versions
+        platform_paths = {}
+        for platform, version in platform_versions.items():
+            platform_path = os.path.join(asset_dir, f'{platform}_copy.json')
+            with open(platform_path, 'w') as f:
+                json.dump(version, f, indent=2)
+            platform_paths[platform] = platform_path
+        
+        # Calculate quality score
+        quality_score = await self._calculate_copy_quality(copy_content)
+        
+        # Create CreativeAsset
+        asset = CreativeAsset(
+            asset_id=asset_id,
+            request_id=request.request_id,
+            content_type=ContentType.COPY,
+            file_path=main_path,
+            file_format='JSON',
+            dimensions={'words': len(copy_content.get('body_copy', '').split())},
+            file_size=os.path.getsize(main_path),
+            quality_score=quality_score,
+            brand_compliance_score=0.85,
+            platform_optimized_versions=platform_paths,
+            metadata={
+                'business_niche': request.business_niche,
+                'formula_used': copy_content.get('formula_used', 'AIDA'),
+                'power_words': copy_content.get('power_words_used', []),
+                'readability_optimized': copy_content.get('readability_optimized', False),
+                'platforms': list(platform_versions.keys())
+            }
+        )
+        
+        return asset
+    
+    async def _calculate_copy_quality(self, copy: Dict[str, Any]) -> float:
+        """Calculate quality score for generated copy"""
+        score = 0.6  # Base score
+        
+        # Check for power words
+        if copy.get('power_words_used'):
+            score += 0.1
+        
+        # Check for readability optimization
+        if copy.get('readability_optimized'):
+            score += 0.1
+        
+        # Check for complete formula structure
+        if copy.get('formula_used'):
+            score += 0.1
+        
+        # Check headline quality
+        headline = copy.get('headline', '')
+        if len(headline.split()) >= 3 and len(headline) <= 60:
+            score += 0.1
+        
+        return min(score, 1.0)
+    
+    async def optimize_for_platform(self, asset: CreativeAsset, platform: str) -> CreativeAsset:
+        """Optimize existing copy asset for specific platform"""
+        # Load original copy
+        with open(asset.file_path, 'r') as f:
+            copy_content = json.load(f)
+        
+        # Create platform-specific version
+        platform_version = await self.create_platform_versions(copy_content, {platform: True})
+        
+        # Save platform version
+        platform_path = os.path.join(os.path.dirname(asset.file_path), f'{platform}_copy.json')
+        with open(platform_path, 'w') as f:
+            json.dump(platform_version[platform], f, indent=2)
+        
+        # Update asset
+        asset.platform_optimized_versions[platform] = platform_path
+        
+        return asset
+    
+    async def analyze_performance(self, asset: CreativeAsset) -> Dict[str, Any]:
+        """Analyze copy performance and provide optimization suggestions"""
+        # Load copy content
+        with open(asset.file_path, 'r') as f:
+            copy_content = json.load(f)
+        
+        analysis = {
+            'readability_score': await self._analyze_readability(copy_content),
+            'emotional_impact': await self._analyze_emotional_impact(copy_content),
+            'conversion_potential': await self._analyze_conversion_potential(copy_content),
+            'brand_alignment': await self._analyze_brand_alignment(copy_content, asset.metadata),
+            'optimization_suggestions': await self._generate_optimization_suggestions(copy_content)
+        }
+        
+        return analysis
+    
+    async def _analyze_readability(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze copy readability"""
+        body = copy.get('body_copy', '')
+        sentences = body.split('.')
+        avg_sentence_length = sum(len(s.split()) for s in sentences) / max(len(sentences), 1)
+        
+        return {
+            'average_sentence_length': avg_sentence_length,
+            'readability_grade': 'good' if avg_sentence_length <= 15 else 'complex',
+            'word_count': len(body.split())
+        }
+    
+    async def _analyze_emotional_impact(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze emotional impact of copy"""
+        power_words_count = len(copy.get('power_words_used', []))
+        return {
+            'power_words_count': power_words_count,
+            'emotional_intensity': 'high' if power_words_count >= 3 else 'medium',
+            'formula_effectiveness': copy.get('formula_used', 'unknown')
+        }
+    
+    async def _analyze_conversion_potential(self, copy: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze conversion potential"""
+        has_clear_cta = bool(copy.get('cta'))
+        has_value_prop = 'transform' in copy.get('body_copy', '').lower()
+        
+        return {
+            'has_clear_cta': has_clear_cta,
+            'has_value_proposition': has_value_prop,
+            'conversion_score': 0.8 if has_clear_cta and has_value_prop else 0.5
+        }
+    
+    async def _analyze_brand_alignment(self, copy: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze brand alignment"""
+        niche = metadata.get('business_niche', 'general')
+        formula = copy.get('formula_used', 'unknown')
+        
+        # Check if formula matches niche
+        optimal_formulas = {
+            'education': 'FAB',
+            'fitness': 'BAB',
+            'business_consulting': 'PASTOR'
+        }
+        
+        is_optimal = optimal_formulas.get(niche) == formula
+        
+        return {
+            'formula_match': is_optimal,
+            'niche_alignment': 'high' if is_optimal else 'medium',
+            'recommended_formula': optimal_formulas.get(niche, 'AIDA')
+        }
+    
+    async def _generate_optimization_suggestions(self, copy: Dict[str, Any]) -> List[str]:
+        """Generate optimization suggestions"""
+        suggestions = []
+        
+        # Check headline length
+        headline = copy.get('headline', '')
+        if len(headline) > 60:
+            suggestions.append("Consider shortening headline for better readability")
+        
+        # Check CTA strength
+        cta = copy.get('cta', '')
+        if not any(word in cta.lower() for word in ['get', 'start', 'discover', 'unlock']):
+            suggestions.append("Use stronger action words in call-to-action")
+        
+        # Check power words
+        if len(copy.get('power_words_used', [])) < 2:
+            suggestions.append("Add more power words for emotional impact")
         
         return suggestions
