@@ -33,13 +33,15 @@ import { Download, FilterList } from '@mui/icons-material';
 import useAnalyticsStore from '../../store/analyticsStore';
 
 const Analytics = () => {
-  const { analytics, loading, error, fetchAnalytics } = useAnalyticsStore();
+  const { analytics, loading, error, fetchAnalytics, fetchContentPerformance } = useAnalyticsStore();
   const [platform, setPlatform] = useState('all');
   const [timeframe, setTimeframe] = useState('month');
 
   useEffect(() => {
+    // Fetch both general analytics and content performance
     fetchAnalytics({ platform, timeframe });
-  }, [fetchAnalytics, platform, timeframe]);
+    fetchContentPerformance({ platform, timeframe });
+  }, [fetchAnalytics, fetchContentPerformance, platform, timeframe]);
 
   const handleExport = () => {
     // TODO: Implement export functionality

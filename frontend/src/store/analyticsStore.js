@@ -24,6 +24,15 @@ const useAnalyticsStore = create((set) => ({
       set({ error, loading: false });
     }
   },
+  fetchContentPerformance: async (filters = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const analytics = await analyticsApi.fetchContentPerformance(filters);
+      set({ analytics, loading: false });
+    } catch (error) {
+      set({ error, loading: false });
+    }
+  },
 }));
 
 export default useAnalyticsStore; 

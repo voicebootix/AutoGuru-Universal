@@ -9,7 +9,9 @@ const useContentStore = create((set) => ({
     set({ loading: true, error: null });
     try {
       await contentApi.createContent(data);
-      set({ loading: false });
+      // Refresh content list after creating new content
+      const contentList = await contentApi.fetchContentHistory();
+      set({ contentList: contentList.content || contentList, loading: false });
     } catch (error) {
       set({ error, loading: false });
     }
@@ -18,7 +20,9 @@ const useContentStore = create((set) => ({
     set({ loading: true, error: null });
     try {
       await contentApi.scheduleContent(data);
-      set({ loading: false });
+      // Refresh content list after scheduling
+      const contentList = await contentApi.fetchContentHistory();
+      set({ contentList: contentList.content || contentList, loading: false });
     } catch (error) {
       set({ error, loading: false });
     }
@@ -26,7 +30,9 @@ const useContentStore = create((set) => ({
   fetchContentHistory: async () => {
     set({ loading: true, error: null });
     try {
-      const contentList = await contentApi.fetchContentHistory();
+      const response = await contentApi.fetchContentHistory();
+      // Handle both mock data structure and real API structure
+      const contentList = response.content || response || [];
       set({ contentList, loading: false });
     } catch (error) {
       set({ error, loading: false });
