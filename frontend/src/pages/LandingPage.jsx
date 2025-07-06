@@ -42,7 +42,7 @@ import {
   FitnessCenter,
   Palette,
   Store,
-  LocalService,
+  Handyman,
   Computer,
   VolunteerActivism,
   ExpandMore,
@@ -73,7 +73,7 @@ const LandingPage = () => {
     { name: 'Fitness & Wellness', icon: <FitnessCenter />, color: 'success' },
     { name: 'Creative Professional', icon: <Palette />, color: 'warning' },
     { name: 'E-commerce', icon: <Store />, color: 'info' },
-    { name: 'Local Services', icon: <LocalService />, color: 'error' },
+    { name: 'Local Services', icon: <Handyman />, color: 'error' },
     { name: 'Technology/SaaS', icon: <Computer />, color: 'primary' },
     { name: 'Non-profit', icon: <VolunteerActivism />, color: 'secondary' },
   ];
