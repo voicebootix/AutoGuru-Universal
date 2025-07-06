@@ -14,7 +14,6 @@ import {
   Container, 
   Button,
   Divider,
-  Avatar,
   Badge,
   IconButton,
   Menu,
@@ -37,7 +36,6 @@ import {
   TrendingUp as TrendingUpIcon,
   Notifications as NotificationsIcon,
   AccountCircle as AccountCircleIcon,
-  Home as HomeIcon,
   AutoAwesome as AutoAwesomeIcon
 } from '@mui/icons-material';
 
