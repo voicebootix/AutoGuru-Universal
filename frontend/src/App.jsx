@@ -62,18 +62,18 @@ import { getAuthToken, removeAuthToken } from './services/api';
 const drawerWidth = 240;
 
 const navItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/', category: 'main' },
-  { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics', category: 'main' },
-  { text: 'Content', icon: <ContentPasteIcon />, path: '/content', category: 'main' },
-  { text: 'Platforms', icon: <LinkIcon />, path: '/platforms', category: 'main' },
-  { text: 'Tasks', icon: <CloudQueueIcon />, path: '/tasks', category: 'main' },
-  { text: 'Ad Creative Engine', icon: <CampaignIcon />, path: '/advertising', category: 'revenue', badge: 'New' },
-  { text: 'Revenue Tracking', icon: <MoneyIcon />, path: '/revenue', category: 'revenue' },
-  { text: 'AI Insights', icon: <PsychologyIcon />, path: '/insights', category: 'ai' },
-  { text: 'Performance', icon: <TrendingUpIcon />, path: '/performance', category: 'ai' },
-  { text: 'Admin Tools', icon: <AdminIcon />, path: '/admin', category: 'admin', badge: 'Pro' },
-  { text: 'Settings', icon: <SettingsIcon />, path: '/settings', category: 'settings' },
-  { text: 'Support', icon: <SupportAgentIcon />, path: '/support', category: 'settings' },
+  { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', category: 'main' },
+  { text: 'Analytics', icon: <AnalyticsIcon />, path: '/dashboard/analytics', category: 'main' },
+  { text: 'Content', icon: <ContentPasteIcon />, path: '/dashboard/content', category: 'main' },
+  { text: 'Platforms', icon: <LinkIcon />, path: '/dashboard/platforms', category: 'main' },
+  { text: 'Tasks', icon: <CloudQueueIcon />, path: '/dashboard/tasks', category: 'main' },
+  { text: 'Ad Creative Engine', icon: <CampaignIcon />, path: '/dashboard/advertising', category: 'revenue', badge: 'New' },
+  { text: 'Revenue Tracking', icon: <MoneyIcon />, path: '/dashboard/revenue', category: 'revenue' },
+  { text: 'AI Insights', icon: <PsychologyIcon />, path: '/dashboard/insights', category: 'ai' },
+  { text: 'Performance', icon: <TrendingUpIcon />, path: '/dashboard/performance', category: 'ai' },
+  { text: 'Admin Tools', icon: <AdminIcon />, path: '/dashboard/admin', category: 'admin', badge: 'Pro' },
+  { text: 'Settings', icon: <SettingsIcon />, path: '/dashboard/settings', category: 'settings' },
+  { text: 'Support', icon: <SupportAgentIcon />, path: '/dashboard/support', category: 'settings' },
 ];
 
 // Protected Route Component
@@ -134,11 +134,12 @@ export default function App() {
       <CssBaseline />
       <Routes>
         {/* Public routes */}
+        <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
         <Route path="/landing" element={<PublicRoute><LandingPage /></PublicRoute>} />
         <Route path="/login" element={<Login onLogin={() => setIsAuthenticated(true)} />} />
         
         {/* Protected routes */}
-        <Route path="/*" element={
+        <Route path="/dashboard/*" element={
           isAuthenticated ? (
             <AuthenticatedApp 
               handleLogout={handleLogout} 
@@ -149,6 +150,15 @@ export default function App() {
             />
           ) : (
             <Navigate to="/login" replace />
+          )
+        } />
+        
+        {/* Redirect authenticated users to dashboard */}
+        <Route path="/*" element={
+          isAuthenticated ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Navigate to="/" replace />
           )
         } />
       </Routes>
@@ -307,7 +317,7 @@ const AuthenticatedApp = ({ handleLogout, notificationCount, anchorEl, handlePro
             <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
-            <Route path="/login" element={<Navigate to="/" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Container>
       </Box>
